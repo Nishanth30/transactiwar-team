@@ -1,0 +1,50 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    command: ["mysqld", "--local-infile=0", "--skip-name-resolve"]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in docker/.env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-app_database}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in docker/.env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in docker/.env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:80"
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in docker/.env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in docker/.env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-app_database}
+      APP_DIAGNOSTIC_MODE: ${APP_DIAGNOSTIC_MODE:-0}
+    volumes:
+      - ../:/var/www/html:ro
+      - ../public/uploads:/var/www/html/public/uploads
+      - ../storage:/var/www/html/storage
+
+volumes:
+  mysql_data:
