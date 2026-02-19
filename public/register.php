@@ -29,10 +29,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = clean_input($_POST['username'] ?? '');
         $email    = clean_input($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
+        $confirmPassword = $_POST['confirm_password'] ?? '';
 
-        if ($username === '' || $email === '' || $password === '') {
+        if ($username === '' || $email === '' || $password === '' || $confirmPassword === '') {
             $error = 'All fields are required.';
-        } else {
+        }
+        elseif ($password !== $confirmPassword) {
+            $error = 'Passwords do not match.';
+        }
+        else {
 
             try {
 
@@ -99,6 +104,12 @@ $csrfToken = generate_csrf_token();
     <label>
         Password:
         <input type="password" name="password" required>
+    </label>
+    <br><br>
+
+    <label>
+        Confirm Password:
+        <input type="password" name="confirm_password" required>
     </label>
     <br><br>
 

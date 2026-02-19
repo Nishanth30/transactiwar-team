@@ -89,6 +89,6 @@ $csrfToken = generate_csrf_token();
 
     <button type="submit">Login</button>
 </form>
-
+<a href="/register.php">Go to Register</a>
 </body>
 </html>
