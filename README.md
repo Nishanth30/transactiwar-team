@@ -7,7 +7,7 @@ Secure-by-default local stack for TransactiWar (`PHP + Apache + MySQL + Docker C
 Run from project root:
 
 ```bash
-cd /Users/apollo/Desktop/GitHub/transactiwar-team
+cd <repo-root>
 ```
 
 1. Copy env template:
