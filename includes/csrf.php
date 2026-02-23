@@ -136,6 +136,10 @@ function _csrfCheckOrigin(): bool {
  */
 function csrfGenerate(): void {
     _csrfAssertSession();
+    // Generate secret if missing (e.g. session existed before secret was introduced)
+    if (empty($_SESSION['csrf_secret'])) {
+        $_SESSION['csrf_secret'] = bin2hex(random_bytes(32));
+    }
 
     $raw  = bin2hex(random_bytes(CSRF_TOKEN_BYTES));  // 64 hex chars, 256 bits
     $hmac = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);  // bind to server-side secret
@@ -235,6 +239,11 @@ function csrfMeta(): string {
 function _csrfValidateToken(string $submitted): bool {
     _csrfAssertSession();
 
+    // Fail safely if secret is missing
+    if (empty($_SESSION['csrf_secret'])) {
+        return false;
+    }
+
     $entry = $_SESSION[CSRF_SESSION_KEY] ?? null;
 
     // Reject if session has no token at all
@@ -263,8 +272,8 @@ function _csrfValidateToken(string $submitted): bool {
 
     // ── Step 2: HMAC session-binding verification ────────────────────────────
     // Format: "<hmac>.<raw_hex>"
-    // Re-derive the expected HMAC from the raw portion and the current session
-    // ID. If the token was lifted from a different session the HMAC won't match.
+    // Re-derive the expected HMAC from the raw portion and the server-side
+    // secret. If the token was lifted from a different session the HMAC won't match.
     $parts = explode('.', $submitted, 2);
     if (count($parts) !== 2) {
         return false; // malformed token

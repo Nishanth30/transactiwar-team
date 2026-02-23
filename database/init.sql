@@ -72,3 +72,13 @@ BEGIN
     END IF;
 END//
 DELIMITER ;
+
+-- 5) IP-based login rate limiting
+CREATE TABLE login_attempts (
+    ip           VARCHAR(45)  NOT NULL,
+    attempts     INT UNSIGNED NOT NULL DEFAULT 0,
+    locked_until INT UNSIGNED NOT NULL DEFAULT 0,
+    last_attempt INT UNSIGNED NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (ip)
+) ENGINE=InnoDB;
