@@ -27,9 +27,12 @@ All members must use these runtime assumptions:
 
 - App is served from `public/` (`/var/www/html/public` inside container).
 - MySQL schema is auto-loaded from `database/init.sql` on fresh DB volume creation.
+- Startup order is enforced as `db (healthy) -> setup (seed) -> app`.
 - Team-local secrets are in `docker/.env`; never commit that file.
 - Required env vars:
 `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `APP_PORT`, `APP_DIAGNOSTIC_MODE`
+- Optional setup tuning vars:
+`DB_WAIT_ATTEMPTS`, `DB_WAIT_SLEEP_SECONDS`
 - Default app exposure is localhost only (`127.0.0.1` binding).
 
 ## Data and DB contract

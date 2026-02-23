@@ -1,0 +1,88 @@
+#!/bin/sh
+set -eu
+
+require_env() {
+  var_name="$1"
+  eval "var_value=\${$var_name:-}"
+  if [ -z "$var_value" ]; then
+    echo "[setup] Missing required env var: $var_name" >&2
+    exit 1
+  fi
+  printf "%s" "$var_value"
+}
+
+MYSQL_HOST="$(require_env MYSQL_HOST)"
+MYSQL_PORT="${MYSQL_PORT:-3306}"
+MYSQL_DATABASE="$(require_env MYSQL_DATABASE)"
+MYSQL_USER="$(require_env MYSQL_USER)"
+MYSQL_PASSWORD="$(require_env MYSQL_PASSWORD)"
+DB_WAIT_ATTEMPTS="${DB_WAIT_ATTEMPTS:-60}"
+DB_WAIT_SLEEP_SECONDS="${DB_WAIT_SLEEP_SECONDS:-2}"
+
+case "$MYSQL_DATABASE" in
+  *[!a-zA-Z0-9_]* | "")
+    echo "[setup] MYSQL_DATABASE must contain only letters, numbers, and underscores." >&2
+    exit 1
+    ;;
+esac
+
+export MYSQL_PWD="$MYSQL_PASSWORD"
+
+echo "[setup] Waiting for MySQL at ${MYSQL_HOST}:${MYSQL_PORT}..."
+attempt=0
+until mysqladmin --protocol=tcp --connect-timeout=2 ping \
+  -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" --silent >/dev/null 2>&1
+do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge "$DB_WAIT_ATTEMPTS" ]; then
+    echo "[setup] MySQL did not become ready in time." >&2
+    exit 1
+  fi
+  sleep "$DB_WAIT_SLEEP_SECONDS"
+done
+echo "[setup] MySQL is reachable."
+
+echo "[setup] Waiting for users table bootstrap..."
+attempt=0
+until [ "$(mysql --protocol=tcp --connect-timeout=2 -N -s \
+  -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" "$MYSQL_DATABASE" \
+  -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name='users';" \
+  2>/dev/null || true)" = "1" ]
+do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge "$DB_WAIT_ATTEMPTS" ]; then
+    echo "[setup] users table was not found in time." >&2
+    exit 1
+  fi
+  sleep "$DB_WAIT_SLEEP_SECONDS"
+done
+echo "[setup] Schema detected; seeding test users."
+
+mysql --protocol=tcp --connect-timeout=5 \
+  -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" "$MYSQL_DATABASE" <<'SQL'
+INSERT INTO users (username, email, password_hash, balance_paise, bio)
+VALUES
+  ('test_alice', 'test.alice@transactiwar.local', '$2y$12$kZ1vW/JXsxfvwvvJNoXr5eVbUHpSln2FUL6jgsdjtVVy1VTQ.0YeW', 10000, 'Seed account for integration checks'),
+  ('test_bob', 'test.bob@transactiwar.local', '$2y$12$bWPnXJ6H9Smc2sNygiO/FOoMQrYM.MI5LhPQ8o63nCvphSLdWvt66', 10000, 'Seed account for integration checks'),
+  ('test_carol', 'test.carol@transactiwar.local', '$2y$12$g9LSD7yeIFalx6T0CO0uTOD1OgUIe2aEEpv92t2N4JJvDgzpAufaW', 10000, 'Seed account for integration checks'),
+  ('test_dave', 'test.dave@transactiwar.local', '$2y$12$WLbaF/bLjSMbvjMFYEOhAOjrs.Ils9xFAi7yR2w9EMC7USrwiau1G', 10000, 'Seed account for integration checks'),
+  ('test_erin', 'test.erin@transactiwar.local', '$2y$12$dU0lH.fVV3yAf/ENs.l7qunMPfjnhdto446UEGaQ1exjJwZHVOjMu', 10000, 'Seed account for integration checks'),
+  ('test_frank', 'test.frank@transactiwar.local', '$2y$12$hx9.AyZ7zf9e/fcdflWMA.GOQYIC/CmYbXZc9SGcu0ut96o6YyBsu', 10000, 'Seed account for integration checks')
+ON DUPLICATE KEY UPDATE
+  email = VALUES(email),
+  password_hash = VALUES(password_hash),
+  bio = VALUES(bio),
+  updated_at = CURRENT_TIMESTAMP;
+SQL
+
+seeded_count="$(mysql --protocol=tcp --connect-timeout=2 -N -s \
+  -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" "$MYSQL_DATABASE" \
+  -e "SELECT COUNT(*) FROM users WHERE username IN ('test_alice','test_bob','test_carol','test_dave','test_erin','test_frank');")"
+seeded_count="$(printf "%s" "$seeded_count" | tr -d '[:space:]')"
+
+if [ "$seeded_count" -lt 6 ]; then
+  echo "[setup] Seed verification failed. Expected 6 users, got ${seeded_count}." >&2
+  exit 1
+fi
+
+echo "[setup] Seeded ${seeded_count} test users successfully."

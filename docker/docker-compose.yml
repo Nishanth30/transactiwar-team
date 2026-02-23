@@ -2,6 +2,7 @@ services:
   db:
     image: mysql:8.4
     restart: unless-stopped
+    init: true
     command: ["mysqld", "--local-infile=0", "--skip-name-resolve"]
     security_opt:
       - no-new-privileges:true
@@ -22,17 +23,48 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - backend
+
+  setup:
+    image: mysql:8.4
+    restart: "no"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-app_database}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in docker/.env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in docker/.env}
+      DB_WAIT_ATTEMPTS: ${DB_WAIT_ATTEMPTS:-60}
+      DB_WAIT_SLEEP_SECONDS: ${DB_WAIT_SLEEP_SECONDS:-2}
+    entrypoint: ["/bin/sh", "/setup.sh"]
+    volumes:
+      - ./setup.sh:/setup.sh:ro
+    networks:
+      - backend
 
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     restart: unless-stopped
+    init: true
     security_opt:
       - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
+      setup:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${APP_PORT:-8080}:80"
     environment:
@@ -43,8 +75,17 @@ services:
       APP_DIAGNOSTIC_MODE: ${APP_DIAGNOSTIC_MODE:-0}
     volumes:
       - ../:/var/www/html:ro
+      - ./.env.example:/var/www/html/docker/.env:ro
       - ../public/uploads:/var/www/html/public/uploads
       - ../storage:/var/www/html/storage
+    networks:
+      - backend
+      - frontend
 
 volumes:
   mysql_data:
+
+networks:
+  backend:
+    internal: true
+  frontend:
