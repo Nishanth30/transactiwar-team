@@ -1,0 +1,774 @@
+<?php
+// includes/logger.php
+// Activity & Security Logger
+// Requirement 4: Webpage, Username, Timestamp, Client IP
+//
+// Defends against: Undetected attacks, blind spots,
+//                  brute force, CSRF, SQLi probing,
+//                  unauthorized access attempts
+//
+// Design principles:
+//   - NEVER crashes the main application
+//   - Silent failure with file fallback
+//   - Zero dependencies except db.php + sanitize.php
+//   - Every attack leaves a trace
+
+declare(strict_types=1);
+
+
+// ══════════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ══════════════════════════════════════════════════════════════════
+
+// Log file fallback path (when DB is unavailable)
+define('LOG_FILE_PATH',     __DIR__ . '/../logs/activity.log');
+
+// Max log file size before rotation (5MB)
+define('LOG_MAX_SIZE',      5 * 1024 * 1024);
+
+// Rotated log file path
+define('LOG_ROTATED_PATH',  __DIR__ . '/../logs/activity_old.log');
+
+// Brute force threshold
+define('MAX_LOGIN_FAILS',   5);
+define('BRUTE_WINDOW_SECS', 300);  // 5 minutes
+
+
+// ══════════════════════════════════════════════════════════════════
+//  EVENT TYPE CONSTANTS
+//  Use these instead of raw strings — no typos
+// ══════════════════════════════════════════════════════════════════
+
+// Authentication events
+define('LOG_REGISTER',          'USER_REGISTER');
+define('LOG_LOGIN_SUCCESS',     'LOGIN_SUCCESS');
+define('LOG_LOGIN_FAIL',        'LOGIN_FAIL');
+define('LOG_LOGIN_LOCKED',      'LOGIN_LOCKED');
+define('LOG_LOGOUT',            'LOGOUT');
+
+// Profile events
+define('LOG_PROFILE_VIEW',      'PROFILE_VIEW');
+define('LOG_PROFILE_UPDATE',    'PROFILE_UPDATE');
+define('LOG_PROFILE_IMG',       'PROFILE_IMAGE_UPLOAD');
+define('LOG_PROFILE_OTHER',     'PROFILE_VIEW_OTHER');
+
+// Transfer events
+define('LOG_TRANSFER_OK',       'TRANSFER_SUCCESS');
+define('LOG_TRANSFER_FAIL',     'TRANSFER_FAIL');
+define('LOG_TRANSFER_INVALID',  'TRANSFER_INVALID');
+
+// Search events
+define('LOG_SEARCH',            'USER_SEARCH');
+
+// Security events — most important during war game
+define('LOG_CSRF_FAIL',         'CSRF_FAIL');
+define('LOG_ACCESS_DENIED',     'ACCESS_DENIED');
+define('LOG_INVALID_INPUT',     'INVALID_INPUT');
+define('LOG_BRUTE_FORCE',       'BRUTE_FORCE_DETECTED');
+define('LOG_FILE_UPLOAD_FAIL',  'FILE_UPLOAD_FAIL');
+define('LOG_SQLI_PROBE',        'SQLI_PROBE_DETECTED');
+define('LOG_XSS_PROBE',         'XSS_PROBE_DETECTED');
+define('LOG_PATH_TRAVERSAL',    'PATH_TRAVERSAL_DETECTED');
+define('LOG_SUSPICIOUS',        'SUSPICIOUS_ACTIVITY');
+
+// Navigation
+define('LOG_PAGE_VIEW',         'PAGE_VIEW');
+
+
+// ══════════════════════════════════════════════════════════════════
+//  SECTION 1 — CORE LOGGING FUNCTION
+//  This is what everyone calls
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Log any user activity or security event.
+ *
+ * Auto-reads from session:
+ *   user_id, username
+ *
+ * Auto-reads:
+ *   client IP  from get_client_ip() or REMOTE_ADDR
+ *   webpage    from $event parameter
+ *   timestamp  from MySQL CURRENT_TIMESTAMP
+ *
+ * NEVER throws exception — silent failure guaranteed.
+ *
+ * Usage — anywhere in the app:
+ *   logActivity(LOG_LOGIN_SUCCESS);
+ *   logActivity(LOG_TRANSFER_FAIL);
+ *   logActivity(LOG_CSRF_FAIL);
+ */
+function logActivity(string $event): void {
+    try {
+        // ── Collect data ─────────────────────────────────────────
+
+        // User data from session
+        $userId   = $_SESSION['user_id']  ?? null;
+        $username = $_SESSION['username'] ?? null;
+
+        // Sanitize event string — prevent log injection
+        // Only allow word chars, underscores, hyphens, colons
+        $event = preg_replace('/[^\w\-:.]/', '', $event);
+        $event = substr($event, 0, 255);
+
+        // Sanitize username snapshot
+        if ($username !== null) {
+            $username = preg_replace('/[^\w\-.]/', '', (string)$username);
+            $username = substr($username, 0, 32);
+        }
+
+        // Get client IP
+        $ip = _getLogIp();
+
+        // ── Try DB first ─────────────────────────────────────────
+        _logToDatabase($userId, $username, $event, $ip);
+
+    } catch (Throwable $e) {
+        // DB failed — try file fallback
+        try {
+            _logToFile(
+                $_SESSION['user_id']  ?? null,
+                $_SESSION['username'] ?? null,
+                $event,
+                _getLogIp()
+            );
+        } catch (Throwable $e2) {
+            // File also failed — last resort
+            error_log('Logger complete failure: ' . $e2->getMessage());
+        }
+    }
+}
+
+/**
+ * Log a high-priority security event.
+ * Includes extra detail field for attack specifics.
+ * Always attempts both DB and file logging.
+ *
+ * Usage:
+ *   logSecurityEvent(LOG_CSRF_FAIL, 'transfer.php POST');
+ *   logSecurityEvent(LOG_BRUTE_FORCE, 'user: admin, attempts: 10');
+ */
+function logSecurityEvent(string $event, string $detail = ''): void {
+    // Sanitize detail
+    $detail  = preg_replace('/[^\w\s\-:.\/]/', '', $detail);
+    $detail  = substr($detail, 0, 200);
+
+    $fullEvent = $detail !== ''
+        ? $event . ':' . $detail
+        : $event;
+
+    // Log to DB
+    logActivity($fullEvent);
+
+    // ALSO log to file — security events get double logged
+    // So even if someone deletes DB logs, file remains
+    try {
+        _logToFile(
+            $_SESSION['user_id']  ?? null,
+            $_SESSION['username'] ?? null,
+            $fullEvent,
+            _getLogIp()
+        );
+    } catch (Throwable $e) {
+        error_log('Security file log failed: ' . $e->getMessage());
+    }
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  SECTION 2 — STORAGE BACKENDS
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Write log entry to activity_logs table.
+ * Uses global $pdo — requires db.php loaded.
+ *
+ * @throws PDOException if DB insert fails
+ */
+function _logToDatabase(
+    ?int    $userId,
+    ?string $username,
+    string  $event,
+    string  $ip
+): void {
+    global $pdo;
+
+    if (!isset($pdo) || !($pdo instanceof PDO)) {
+        throw new RuntimeException('PDO not available');
+    }
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO activity_logs
+            (user_id, username_snapshot, webpage, client_ip)
+         VALUES
+            (?, ?, ?, ?)'
+    );
+
+    $stmt->execute([
+        $userId,    // NULL for guests
+        $username,  // NULL for guests
+        $event,     // event type
+        $ip,        // client IP
+    ]);
+}
+
+/**
+ * Write log entry to flat file — fallback when DB unavailable.
+ * Rotates file when it exceeds LOG_MAX_SIZE.
+ *
+ * Format:
+ *   [2026-02-22 14:32:07] | EVENT | user_id | username | IP
+ *
+ * @throws RuntimeException if file write fails
+ */
+function _logToFile(
+    ?int    $userId,
+    ?string $username,
+    string  $event,
+    string  $ip
+): void {
+    // Rotate log if too large
+    if (file_exists(LOG_FILE_PATH) &&
+        filesize(LOG_FILE_PATH) > LOG_MAX_SIZE) {
+        _rotateLogFile();
+    }
+
+    $timestamp = date('Y-m-d H:i:s');
+    $uid       = $userId   ?? 'guest';
+    $uname     = $username ?? 'guest';
+
+    // Pipe-delimited format — easy to parse
+    $line = "[{$timestamp}] | {$event} | {$uid} | {$uname} | {$ip}\n";
+
+    // FILE_APPEND + LOCK_EX — safe concurrent writes
+    $result = file_put_contents(
+        LOG_FILE_PATH,
+        $line,
+        FILE_APPEND | LOCK_EX
+    );
+
+    if ($result === false) {
+        throw new RuntimeException(
+            'Cannot write to log file: ' . LOG_FILE_PATH
+        );
+    }
+}
+
+/**
+ * Rotate log file when it gets too large.
+ * Renames current log to _old.log
+ */
+function _rotateLogFile(): void {
+    if (file_exists(LOG_ROTATED_PATH)) {
+        unlink(LOG_ROTATED_PATH);
+    }
+
+    rename(LOG_FILE_PATH, LOG_ROTATED_PATH);
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  SECTION 3 — IP HELPER
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Get validated client IP for logging.
+ * Uses sanitize.php if loaded, falls back to REMOTE_ADDR.
+ */
+function _getLogIp(): string {
+    // Use sanitize.php function if available
+    if (function_exists('get_client_ip')) {
+        return get_client_ip();
+    }
+
+    // Fallback — direct REMOTE_ADDR
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+    // Basic validation
+    if (filter_var($ip, FILTER_VALIDATE_IP)) {
+        return $ip;
+    }
+
+    return '0.0.0.0';
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  SECTION 4 — BRUTE FORCE DETECTION
+//  Used by auth.php (Member 1) to lock accounts
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Count failed login attempts from an IP in last N seconds.
+ * Used to detect and block brute force attacks.
+ *
+ * Usage in auth.php (Member 1):
+ *   $fails = countRecentFailedLogins($ip);
+ *   if ($fails >= MAX_LOGIN_FAILS) {
+ *       logActivity(LOG_LOGIN_LOCKED);
+ *       $error = 'Too many attempts. Try again in 5 minutes.';
+ *   }
+ */
+function countRecentFailedLogins(string $ip): int {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return 0; // Can't check — allow through (fail open for availability)
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM activity_logs
+             WHERE webpage     = ?
+             AND   client_ip   = ?
+             AND   created_at >= NOW() - INTERVAL ? SECOND'
+        );
+
+        $stmt->execute([
+            LOG_LOGIN_FAIL,
+            $ip,
+            BRUTE_WINDOW_SECS,
+        ]);
+
+        return (int)$stmt->fetchColumn();
+
+    } catch (Throwable $e) {
+        error_log('countRecentFailedLogins error: ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Check if an IP is currently brute forcing.
+ * Simple boolean check for use in login handler.
+ *
+ * Usage in login.php:
+ *   if (isIpBruteForcing()) {
+ *       logActivity(LOG_BRUTE_FORCE);
+ *       die('Too many attempts.');
+ *   }
+ */
+function isIpBruteForcing(): bool {
+    $ip = _getLogIp();
+    return countRecentFailedLogins($ip) >= MAX_LOGIN_FAILS;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  SECTION 5 — QUERY FUNCTIONS
+//  For war game monitoring and attack investigation
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Get most recent log entries.
+ * Use during war game to see what's happening live.
+ *
+ * Usage:
+ *   $logs = getRecentLogs(50);
+ *   foreach ($logs as $log) { ... }
+ */
+function getRecentLogs(int $limit = 50): array {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return [];
+    }
+
+    try {
+        $limit = max(1, min(500, $limit)); // clamp 1-500
+
+        $stmt = $pdo->prepare(
+            'SELECT
+                id,
+                user_id,
+                username_snapshot,
+                webpage,
+                client_ip,
+                created_at
+             FROM activity_logs
+             ORDER BY created_at DESC
+             LIMIT ?'
+        );
+
+        $stmt->execute([$limit]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    } catch (Throwable $e) {
+        error_log('getRecentLogs error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get all activity from a specific IP address.
+ * Use during war game to track what an attacker is doing.
+ *
+ * Usage:
+ *   $logs = getLogsByIp('10.0.0.5');
+ */
+function getLogsByIp(string $ip, int $limit = 100): array {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return [];
+    }
+
+    try {
+        // Validate IP first
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            return [];
+        }
+
+        $limit = max(1, min(500, $limit));
+
+        $stmt = $pdo->prepare(
+            'SELECT
+                id,
+                user_id,
+                username_snapshot,
+                webpage,
+                client_ip,
+                created_at
+             FROM activity_logs
+             WHERE client_ip = ?
+             ORDER BY created_at DESC
+             LIMIT ?'
+        );
+
+        $stmt->execute([$ip, $limit]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    } catch (Throwable $e) {
+        error_log('getLogsByIp error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get all security events only.
+ * Filters for attack-related log entries.
+ * Most useful query during war game.
+ *
+ * Usage:
+ *   $attacks = getSecurityEvents(100);
+ */
+function getSecurityEvents(int $limit = 100): array {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return [];
+    }
+
+    try {
+        $limit = max(1, min(500, $limit));
+
+        $stmt = $pdo->prepare(
+            'SELECT
+                id,
+                user_id,
+                username_snapshot,
+                webpage,
+                client_ip,
+                created_at
+             FROM activity_logs
+             WHERE webpage IN (?, ?, ?, ?, ?, ?, ?, ?)
+             OR    webpage LIKE "CSRF_FAIL%"
+             OR    webpage LIKE "SQLI%"
+             OR    webpage LIKE "XSS%"
+             ORDER BY created_at DESC
+             LIMIT ?'
+        );
+
+        $stmt->execute([
+            LOG_CSRF_FAIL,
+            LOG_ACCESS_DENIED,
+            LOG_INVALID_INPUT,
+            LOG_BRUTE_FORCE,
+            LOG_FILE_UPLOAD_FAIL,
+            LOG_SQLI_PROBE,
+            LOG_XSS_PROBE,
+            LOG_PATH_TRAVERSAL,
+            $limit,
+        ]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    } catch (Throwable $e) {
+        error_log('getSecurityEvents error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get attack summary grouped by IP.
+ * Shows which IPs are most aggressive.
+ *
+ * Usage during war game:
+ *   $summary = getAttackSummaryByIp();
+ *   // Shows: IP | attack_count | last_seen
+ */
+function getAttackSummaryByIp(): array {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return [];
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT
+                client_ip,
+                COUNT(*)        AS attack_count,
+                MAX(created_at) AS last_seen,
+                MIN(created_at) AS first_seen,
+                GROUP_CONCAT(
+                    DISTINCT webpage
+                    ORDER BY created_at DESC
+                    SEPARATOR ", "
+                ) AS attack_types
+             FROM activity_logs
+             WHERE webpage IN (?, ?, ?, ?, ?, ?, ?, ?)
+             OR    webpage LIKE "CSRF_FAIL%"
+             GROUP BY client_ip
+             ORDER BY attack_count DESC
+             LIMIT 20'
+        );
+
+        $stmt->execute([
+            LOG_CSRF_FAIL,
+            LOG_ACCESS_DENIED,
+            LOG_LOGIN_FAIL,
+            LOG_INVALID_INPUT,
+            LOG_BRUTE_FORCE,
+            LOG_FILE_UPLOAD_FAIL,
+            LOG_SQLI_PROBE,
+            LOG_XSS_PROBE,
+        ]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    } catch (Throwable $e) {
+        error_log('getAttackSummaryByIp error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get login activity for a specific user.
+ * Check if an account has been compromised.
+ *
+ * Usage:
+ *   $history = getUserLoginHistory($userId, 20);
+ */
+function getUserLoginHistory(int $userId, int $limit = 20): array {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return [];
+    }
+
+    try {
+        $limit = max(1, min(100, $limit));
+
+        $stmt = $pdo->prepare(
+            'SELECT
+                webpage,
+                client_ip,
+                created_at
+             FROM activity_logs
+             WHERE user_id = ?
+             AND   webpage IN (?, ?)
+             ORDER BY created_at DESC
+             LIMIT ?'
+        );
+
+        $stmt->execute([
+            $userId,
+            LOG_LOGIN_SUCCESS,
+            LOG_LOGIN_FAIL,
+            $limit,
+        ]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    } catch (Throwable $e) {
+        error_log('getUserLoginHistory error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Get activity in last N minutes.
+ * Live feed for war game defense monitoring.
+ *
+ * Usage:
+ *   $recent = getLiveActivity(5); // last 5 minutes
+ */
+function getLiveActivity(int $minutes = 5): array {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return [];
+    }
+
+    try {
+        $minutes = max(1, min(60, $minutes));
+
+        $stmt = $pdo->prepare(
+            'SELECT
+                id,
+                user_id,
+                username_snapshot,
+                webpage,
+                client_ip,
+                created_at
+             FROM activity_logs
+             WHERE created_at >= NOW() - INTERVAL ? MINUTE
+             ORDER BY created_at DESC'
+        );
+
+        $stmt->execute([$minutes]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    } catch (Throwable $e) {
+        error_log('getLiveActivity error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  SECTION 6 — WAR GAME MONITOR PAGE
+//  Create public/monitor.php using these functions
+//  Password protect it — only your team should see it
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Render a simple HTML monitoring dashboard.
+ * Drop this output inside monitor.php during war game.
+ *
+ * Usage in public/monitor.php:
+ *   <?php
+ *   require '../includes/headers.php';
+ *   send_security_headers();
+ *   require '../config/db.php';
+ *   require '../includes/logger.php';
+ *
+ *   // Password protect
+ *   if ($_GET['key'] !== 'YOUR_SECRET_KEY') die('403');
+ *
+ *   renderMonitorDashboard();
+ */
+function renderMonitorDashboard(): void {
+    $liveActivity  = getLiveActivity(10);
+    $securityEvents = getSecurityEvents(50);
+    $attacksByIp   = getAttackSummaryByIp();
+
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="refresh" content="15"> <!-- auto refresh every 15s -->
+        <title>Monitor Dashboard</title>
+        <style>
+            body  { font-family: monospace; background: #0d0d0d; color: #00ff00; padding: 20px; }
+            h2    { color: #ff6600; border-bottom: 1px solid #333; padding-bottom: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 13px; }
+            th    { background: #1a1a1a; color: #ff6600; padding: 8px; text-align: left; }
+            td    { padding: 6px 8px; border-bottom: 1px solid #1a1a1a; }
+            tr:hover { background: #111; }
+            .attack  { color: #ff4444; }
+            .success { color: #00ff00; }
+            .info    { color: #aaaaaa; }
+            .badge   { padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+            .red     { background: #4a0000; color: #ff4444; }
+            .green   { background: #004a00; color: #00ff00; }
+            .yellow  { background: #4a4a00; color: #ffff00; }
+        </style>
+    </head>
+    <body>
+
+    <h1>🛡️ War Game Monitor
+        <small style="font-size:14px; color:#666;">
+            Auto-refresh: 15s | <?= date('H:i:s') ?>
+        </small>
+    </h1>
+
+    <!-- Attack Summary by IP -->
+    <h2>🚨 Attack Summary by IP</h2>
+    <?php if (empty($attacksByIp)): ?>
+        <p class="success">✅ No attacks detected yet</p>
+    <?php else: ?>
+    <table>
+        <tr>
+            <th>IP Address</th>
+            <th>Attack Count</th>
+            <th>First Seen</th>
+            <th>Last Seen</th>
+            <th>Attack Types</th>
+        </tr>
+        <?php foreach ($attacksByIp as $row): ?>
+        <tr class="attack">
+            <td><strong><?= htmlspecialchars($row['client_ip']) ?></strong></td>
+            <td><span class="badge red"><?= (int)$row['attack_count'] ?></span></td>
+            <td><?= htmlspecialchars($row['first_seen']) ?></td>
+            <td><?= htmlspecialchars($row['last_seen']) ?></td>
+            <td><?= htmlspecialchars($row['attack_types']) ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+    <?php endif; ?>
+
+    <!-- Recent Security Events -->
+    <h2>🔴 Security Events (Last 50)</h2>
+    <?php if (empty($securityEvents)): ?>
+        <p class="success">✅ No security events</p>
+    <?php else: ?>
+    <table>
+        <tr>
+            <th>Time</th>
+            <th>Event</th>
+            <th>User</th>
+            <th>IP</th>
+        </tr>
+        <?php foreach ($securityEvents as $row): ?>
+        <tr>
+            <td class="info"><?= htmlspecialchars($row['created_at']) ?></td>
+            <td class="attack"><strong><?= htmlspecialchars($row['webpage']) ?></strong></td>
+            <td><?= htmlspecialchars($row['username_snapshot'] ?? 'guest') ?></td>
+            <td><?= htmlspecialchars($row['client_ip']) ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+    <?php endif; ?>
+
+    <!-- Live Activity Feed -->
+    <h2>📡 Live Activity (Last 10 Minutes)</h2>
+    <table>
+        <tr>
+            <th>Time</th>
+            <th>Event</th>
+            <th>User</th>
+            <th>IP</th>
+        </tr>
+        <?php foreach ($liveActivity as $row):
+            $isAttack = str_contains($row['webpage'], 'FAIL') ||
+                        str_contains($row['webpage'], 'DENIED') ||
+                        str_contains($row['webpage'], 'PROBE') ||
+                        str_contains($row['webpage'], 'BRUTE');
+            $class = $isAttack ? 'attack' : 'success';
+        ?>
+        <tr>
+            <td class="info"><?= htmlspecialchars($row['created_at']) ?></td>
+            <td class="<?= $class ?>"><?= htmlspecialchars($row['webpage']) ?></td>
+            <td><?= htmlspecialchars($row['username_snapshot'] ?? 'guest') ?></td>
+            <td><?= htmlspecialchars($row['client_ip']) ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+
+    </body>
+    </html>
+    <?php
+}
