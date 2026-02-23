@@ -4,7 +4,7 @@ declare(strict_types=1);
 header('Content-Type: text/plain; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
-
+echo '<a href="/logout.php">Logout</a>' . "\n";
 echo "PHP running\n";
 
 function requireEnv(string $key): string
