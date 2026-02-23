@@ -19,61 +19,53 @@ if (isset($_SESSION['user_id'])) {
 /* Handle login submit */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // CSRF protection
-    if (!validate_csrf_token($_POST['csrf_token'] ?? '')) {
-        http_response_code(400);
-        $error = 'Invalid request.';
+    verifyCsrf();
+
+    $usernameOrEmail = post_str('identifier');
+    $password        = $_POST['password'] ?? '';
+
+    if ($usernameOrEmail === '' || $password === '') {
+        $error = 'All fields are required.';
+    } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
+        $error = 'Invalid credentials.';
     } else {
+        try {
+            $success = login_user($pdo, $usernameOrEmail, $password);
 
-        $usernameOrEmail = clean_input($_POST['identifier'] ?? '');
-        $password = $_POST['password'] ?? '';
-
-        if ($usernameOrEmail === '' || $password === '') {
-            $error = 'All fields are required.';
-        } else {
-
-            try {
-                $success = login_user($pdo, $usernameOrEmail, $password);
-
-                if ($success) {
-                    header('Location: /index.php');
-                    exit;
-                } else {
-                    $error = 'Invalid credentials.';
-                }
-
-            } catch (Throwable $e) {
-                error_log($e->getMessage());
-                $error = 'Login failed.';
+            if ($success) {
+                header('Location: /index.php');
+                exit;
+            } else {
+                $error = 'Invalid credentials.';
             }
+
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $error = 'Login failed.';
         }
     }
 }
 
-/* Generate CSRF token for form */
-$csrfToken = generate_csrf_token();
-
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Login</title>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <?= csrfMeta() ?>
 </head>
 <body>
 
 <h2>Login</h2>
 
 <?php if ($error !== ''): ?>
-<p style="color:red;">
-    <?= escape_output($error) ?>
-</p>
+    <p style="color:red;">
+        <?= escape_output($error) ?>
+    </p>
 <?php endif; ?>
 
 <form method="POST" action="">
-    <input type="hidden" name="csrf_token"
-           value="<?= escape_output($csrfToken) ?>">
+    <?= csrfField() ?>
 
     <label>
         Username or Email:
@@ -89,6 +81,8 @@ $csrfToken = generate_csrf_token();
 
     <button type="submit">Login</button>
 </form>
+
 <a href="/register.php">Go to Register</a>
+
 </body>
 </html>

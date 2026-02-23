@@ -1,64 +1,297 @@
 <?php
 declare(strict_types=1);
 
-function register_user(PDO $pdo, string $username, string $email, string $password): bool
+require_once __DIR__ . '/sanitize.php';
+require_once __DIR__ . '/session.php';
+
+/*
+|--------------------------------------------------------------------------
+| Security constants
+|--------------------------------------------------------------------------
+*/
+const LOGIN_DELAY_MIN_US  = 250000; // 0.25s
+const LOGIN_DELAY_MAX_US  = 400000; // 0.40s
+const MAX_LOGIN_ATTEMPTS  = 5;
+const LOCKOUT_SECONDS     = 300;    // 5 minute lockout
+const ATTEMPT_WINDOW      = 900;    // reset attempt count after 15 min of inactivity
+
+/*
+ * Real bcrypt hash used when user is missing.
+ * Prevents timing-based user enumeration.
+ *
+ * IMPORTANT: Regenerate with password_hash('dummy', PASSWORD_DEFAULT)
+ * and replace — never reuse a hash from the internet.
+ */
+const DUMMY_HASH =
+    '$2y$12$KIXsvMrxRbLQn5oTMHuSPOY/hGKPSfLpFBG7GiKVcI5Fg2NeRRdYu';
+
+
+/*
+|--------------------------------------------------------------------------
+| Ensure session exists safely
+|--------------------------------------------------------------------------
+*/
+function ensure_session_started(): void
 {
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        require_once __DIR__ . '/session.php';
+    }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| IP-based rate limiting (DB-backed)
+| Keyed by IP — clearing cookies does NOT reset this.
+|--------------------------------------------------------------------------
+*/
+function is_ip_locked(PDO $pdo, string $ip): bool
+{
+    $now  = time();
+    $stmt = $pdo->prepare("
+        SELECT attempts, locked_until, last_attempt
+        FROM login_attempts
+        WHERE ip = :ip
+    ");
+    $stmt->execute(['ip' => $ip]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return false;
+    }
+
+    // Still within lockout window
+    if ($row['locked_until'] > $now) {
+        return true;
+    }
+
+    return false;
+}
+
+function record_failed_attempt(PDO $pdo, string $ip): void
+{
+    $now = time();
+
+    /*
+     * INSERT new record or UPDATE existing.
+     * If last attempt was outside the window, reset counter.
+     * ON DUPLICATE KEY UPDATE handles the race condition atomically.
+     */
+    $pdo->prepare("
+        INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
+        VALUES (:ip, 1, 0, :now)
+        ON DUPLICATE KEY UPDATE
+            attempts     = IF(last_attempt < :window, 1, attempts + 1),
+            locked_until = IF(
+                             IF(last_attempt < :window, 1, attempts + 1) >= :max,
+                             :now + :lockout,
+                             locked_until
+                           ),
+            last_attempt = :now
+    ")->execute([
+        'ip'      => $ip,
+        'now'     => $now,
+        'window'  => $now - ATTEMPT_WINDOW,
+        'max'     => MAX_LOGIN_ATTEMPTS,
+        'lockout' => LOCKOUT_SECONDS,
+    ]);
+}
+
+function clear_failed_attempts(PDO $pdo, string $ip): void
+{
+    $pdo->prepare("
+        DELETE FROM login_attempts WHERE ip = :ip
+    ")->execute(['ip' => $ip]);
+}
+
+function get_lockout_remaining(PDO $pdo, string $ip): int
+{
+    $now  = time();
+    $stmt = $pdo->prepare("
+        SELECT locked_until FROM login_attempts WHERE ip = :ip
+    ");
+    $stmt->execute(['ip' => $ip]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row || $row['locked_until'] <= $now) {
+        return 0;
+    }
+
+    return $row['locked_until'] - $now;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Register user
+|--------------------------------------------------------------------------
+| Returns:
+|   true        -> success
+|   'duplicate' -> username/email exists
+|   false       -> validation or unexpected failure
+|
+| Duplicate detection is handled atomically by the DB UNIQUE constraint,
+| avoiding the TOCTOU race condition of a pre-check SELECT.
+|--------------------------------------------------------------------------
+*/
+function register_user(PDO $pdo, string $username, string $email, string $password): bool|string
+{
+    $username = trim($username);
+    $email    = normalize_email($email);
+
+    if ($username === '' || $email === '' || $password === '') {
+        return false;
+    }
+
+    if (
+        !validate_username($username) ||
+        !validate_email($email)       ||
+        !validate_password($password)
+    ) {
+        return false;
+    }
+
     $hash = password_hash($password, PASSWORD_DEFAULT);
 
-    $sql = "
-        INSERT INTO users (username, email, password_hash)
-        VALUES (:username, :email, :password_hash)
-    ";
-
     try {
-        $stmt = $pdo->prepare($sql);
-
-        return $stmt->execute([
-            'username' => $username,
-            'email' => $email,
+        $stmt = $pdo->prepare("
+            INSERT INTO users (username, email, password_hash)
+            VALUES (:username, :email, :password_hash)
+        ");
+        $stmt->execute([
+            'username'      => $username,
+            'email'         => $email,
             'password_hash' => $hash
         ]);
 
+        return true;
+
     } catch (PDOException $e) {
+        // SQLSTATE 23000 = integrity constraint violation (duplicate key)
+        if ($e->getCode() === '23000') {
+            return 'duplicate';
+        }
+
+        error_log('Register failed: ' . $e->getMessage());
         return false;
     }
 }
 
 
-function login_user(PDO $pdo, string $identifier, string $password): bool
+/*
+|--------------------------------------------------------------------------
+| Login user
+|--------------------------------------------------------------------------
+| Returns:
+|   true     -> success
+|   'locked' -> IP is rate-limited
+|   false    -> invalid credentials
+|
+| Security:
+| - DB-backed IP rate limiting (cookie-clearing resistant)
+| - Anti-enumeration timing protection
+| - Randomized brute-force delay
+| - Session fixation prevention
+| - Session IP binding
+|--------------------------------------------------------------------------
+*/
+function login_user(PDO $pdo, string $identifier, string $password): bool|string
 {
-    $sql = "
-        SELECT id, username, password_hash
-        FROM users
-        WHERE username = :id OR email = :id
-        LIMIT 1
-    ";
+    ensure_session_started();
+
+    $ip = sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+
+    // Check IP lockout before doing any work
+    if (is_ip_locked($pdo, $ip)) {
+        usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
+        return 'locked';
+    }
+
+    $identifier = trim($identifier);
+
+    /*
+     * Split query to avoid username/email ambiguity —
+     * prevents edge cases where a username looks like an email.
+     */
+    if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+        $sql = "
+            SELECT id, username, password_hash
+            FROM users
+            WHERE email = :id
+            LIMIT 1
+        ";
+    } else {
+        $sql = "
+            SELECT id, username, password_hash
+            FROM users
+            WHERE username = :id
+            LIMIT 1
+        ";
+    }
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['id' => $identifier]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $user = $stmt->fetch();
+    /*
+     * Always run password_verify() even when user not found.
+     * DUMMY_HASH is a real bcrypt hash so full computation always runs,
+     * preventing timing-based user enumeration.
+     */
+    $hashToCheck = $user['password_hash'] ?? DUMMY_HASH;
+    $valid       = password_verify($password, $hashToCheck);
 
-    if (!$user) {
+    // Random delay — slows brute force and hides timing differences
+    usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
+
+    if (!$user || !$valid) {
+        record_failed_attempt($pdo, $ip);
         return false;
     }
 
-    if (!password_verify($password, $user['password_hash'])) {
-        return false;
-    }
+    // Successful login — clear rate limit record for this IP
+    clear_failed_attempts($pdo, $ip);
 
     /* Prevent session fixation */
     session_regenerate_id(true);
 
-    $_SESSION['user_id'] = (int)$user['id'];
+    $_SESSION['user_id']  = (int)$user['id'];
     $_SESSION['username'] = $user['username'];
+
+    /*
+     * Bind session to client IP.
+     * Invalidates stolen cookies used from a different IP.
+     */
+    $_SESSION['ip'] = $ip;
 
     return true;
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| Require login
+|--------------------------------------------------------------------------
+*/
 function require_login(): void
 {
+    ensure_session_started();
+
     if (!isset($_SESSION['user_id'])) {
+        header('Location: /login.php');
+        exit;
+    }
+
+    /*
+     * Session IP binding check.
+     * Kills the session if the IP has changed — prevents cookie hijacking.
+     */
+    $ip = sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+
+    if (($_SESSION['ip'] ?? '') !== $ip) {
+        session_unset();
+        session_destroy();
+
         header('Location: /login.php');
         exit;
     }

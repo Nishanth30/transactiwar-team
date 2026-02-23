@@ -126,8 +126,8 @@ function _csrfCheckOrigin(): bool {
 /**
  * Generate a fresh cryptographically secure HMAC-bound token.
  *
- * The raw token (256 bits of CSPRNG entropy) is HMAC'd with the current
- * session ID so that a token from session A is always invalid in session B,
+ * The raw token (256 bits of CSPRNG entropy) is HMAC'd with a server-side
+ * secret so that a token from session A is always invalid in session B,
  * defeating session-fixation-assisted CSRF attacks.
  *
  * Stored format: "<hmac>.<raw_hex>"
@@ -138,8 +138,7 @@ function csrfGenerate(): void {
     _csrfAssertSession();
 
     $raw  = bin2hex(random_bytes(CSRF_TOKEN_BYTES));  // 64 hex chars, 256 bits
-    $hmac = hash_hmac('sha256', $raw, session_id());  // bind to this session
-
+    $hmac = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);  // bind to server-side secret
     $_SESSION[CSRF_SESSION_KEY] = [
         'token'      => $hmac . '.' . $raw,
         'created_at' => time(),
@@ -274,7 +273,7 @@ function _csrfValidateToken(string $submitted): bool {
     [$submittedHmac, $raw] = $parts;
 
     // Constant-time comparison for the HMAC portion as well
-    $expectedHmac = hash_hmac('sha256', $raw, session_id());
+    $expectedHmac = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);
     if (!hash_equals($expectedHmac, $submittedHmac)) {
         return false;
     }

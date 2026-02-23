@@ -8,7 +8,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/sanitize.php';
 
-$error = '';
+$error   = '';
 $success = '';
 
 /* Already logged in */
@@ -20,90 +20,86 @@ if (isset($_SESSION['user_id'])) {
 /* Handle form submit */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    /* CSRF validation */
-    if (!validate_csrf_token($_POST['csrf_token'] ?? '')) {
-        http_response_code(400);
-        $error = 'Invalid request.';
+    verifyCsrf();
+
+    $username        = post_str('username');
+    $email           = normalize_email(post_str('email'));
+    $password        = $_POST['password']         ?? '';
+    $confirmPassword = $_POST['confirm_password'] ?? '';
+
+    if ($username === '' || $email === '' || $password === '' || $confirmPassword === '') {
+        $error = 'All fields are required.';
+    } elseif (!validate_username($username)) {
+        $error = 'Username must be 5-32 characters and contain only lowercase letters, numbers, dots, or underscores.';
+    } elseif (!validate_email($email)) {
+        $error = 'Invalid email address.';
+    } elseif (!validate_password($password)) {
+        $error = password_requirements();
+    } elseif ($password !== $confirmPassword) {
+        $error = 'Passwords do not match.';
     } else {
+        try {
+            $result = register_user($pdo, $username, $email, $password);
 
-        $username = clean_input($_POST['username'] ?? '');
-        $email    = clean_input($_POST['email'] ?? '');
-        $password = $_POST['password'] ?? '';
-        $confirmPassword = $_POST['confirm_password'] ?? '';
-
-        if ($username === '' || $email === '' || $password === '' || $confirmPassword === '') {
-            $error = 'All fields are required.';
-        }
-        elseif ($password !== $confirmPassword) {
-            $error = 'Passwords do not match.';
-        }
-        else {
-
-            try {
-
-                $ok = register_user($pdo, $username, $email, $password);
-
-                if ($ok) {
-                    $success = 'Registration successful. You can now login.';
-                } else {
-                    $error = 'Username or email already exists.';
-                }
-
-            } catch (Throwable $e) {
-                error_log($e->getMessage());
+            if ($result === true) {
+                $success = 'Registration successful. You can now login.';
+            } elseif ($result === 'duplicate') {
+                $error = 'Username or email already exists.';
+            } else {
                 $error = 'Registration failed.';
             }
+
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $error = 'Registration failed.';
         }
     }
 }
-
-/* Generate CSRF token */
-$csrfToken = generate_csrf_token();
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Register</title>
+    <meta charset="UTF-8">
+    <title>Register</title>
+    <?= csrfMeta() ?>
 </head>
 <body>
 
 <h2>Register</h2>
 
 <?php if ($error !== ''): ?>
-<p style="color:red;">
-    <?= escape_output($error) ?>
-</p>
+    <p style="color:red;">
+        <?= escape_output($error) ?>
+    </p>
 <?php endif; ?>
 
 <?php if ($success !== ''): ?>
-<p style="color:green;">
-    <?= escape_output($success) ?>
-</p>
+    <p style="color:green;">
+        <?= escape_output($success) ?>
+    </p>
 <?php endif; ?>
 
 <form method="POST">
-
-    <input type="hidden"
-           name="csrf_token"
-           value="<?= escape_output($csrfToken) ?>">
+    <?= csrfField() ?>
 
     <label>
         Username:
-        <input type="text" name="username" required>
+        <input type="text" name="username" required
+               minlength="<?= MIN_USERNAME_LEN ?>" maxlength="<?= MAX_USERNAME_LEN ?>">
     </label>
     <br><br>
 
     <label>
         Email:
-        <input type="email" name="email" required>
+        <input type="email" name="email" required maxlength="<?= MAX_EMAIL_LEN ?>">
     </label>
     <br><br>
 
     <label>
         Password:
-        <input type="password" name="password" required>
+        <input type="password" name="password" required
+               minlength="<?= MIN_PASSWORD_LEN ?>" maxlength="<?= MAX_PASSWORD_LEN ?>">
     </label>
     <br><br>
 
@@ -113,8 +109,10 @@ $csrfToken = generate_csrf_token();
     </label>
     <br><br>
 
-    <button type="submit">Register</button>
+    <small><?= escape_output(password_requirements()) ?></small>
+    <br><br>
 
+    <button type="submit">Register</button>
 </form>
 
 <br>

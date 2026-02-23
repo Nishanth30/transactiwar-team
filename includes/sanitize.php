@@ -12,7 +12,7 @@ declare(strict_types=1);
 // ══════════════════════════════════════════════════════════════════
 
 define('MAX_USERNAME_LEN',  32);
-define('MIN_USERNAME_LEN',  3);
+define('MIN_USERNAME_LEN',  5);
 define('MAX_EMAIL_LEN',     254);
 define('MAX_PASSWORD_LEN',  128);
 define('MIN_PASSWORD_LEN',  8);
@@ -293,7 +293,7 @@ function validate_username(string $username): bool {
 
     // Only alphanumeric, underscore, hyphen
     // Cannot start or end with underscore or hyphen
-    if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_\-]*[a-zA-Z0-9]$/', $username) &&
+    if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9-_]*[a-zA-Z0-9]$/', $username) &&
         !preg_match('/^[a-zA-Z0-9]$/', $username)) {
         return false;
     }
