@@ -21,6 +21,7 @@ define('MAX_COMMENT_LEN',   500);     // transactions.receiver_comment
 define('MAX_FILEPATH_LEN',  512);     // users.profile_image_path
 define('MAX_WEBPAGE_LEN',   255);     // activity_logs.webpage
 define('MIN_TRANSFER_PAISE', 100);    // ₹1.00 minimum
+define('PUBLIC_ID_LEN',      36);     // UUID string: 8-4-4-4-12
 
 
 // ══════════════════════════════════════════════════════════════════
@@ -265,6 +266,35 @@ function sanitize_amount(mixed $value): ?int {
     }
 
     return $int;
+}
+
+/**
+ * Sanitize and validate public user ID (UUID string).
+ * Returns canonical lowercase UUID if valid, otherwise null.
+ *
+ * Usage:
+ *   $receiverPublicId = sanitize_public_user_id($_POST['receiver_public_id']);
+ */
+function sanitize_public_user_id(mixed $value): ?string {
+    if ($value === null || $value === false) {
+        return null;
+    }
+
+    $str = trim(str_replace("\0", '', (string)$value));
+    $str = strtolower($str);
+
+    if (strlen($str) !== PUBLIC_ID_LEN) {
+        return null;
+    }
+
+    if (!preg_match(
+        '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',
+        $str
+    )) {
+        return null;
+    }
+
+    return $str;
 }
 
 
@@ -745,6 +775,7 @@ function truncate(string $str, int $length, string $suffix = '...'): string {
 // ├─────────────────────────────────────────────────────────────────┤
 // │ Transfer amount        →  sanitize_amount($val)                 │
 // │ User ID                →  sanitize_uint($val)                   │
+// │ Public User ID         →  sanitize_public_user_id($val)         │
 // │ Biography              →  sanitize_bio($val)                    │
 // │ Comment                →  sanitize_comment($val)                │
 // │ Filename               →  sanitize_filename($val)               │

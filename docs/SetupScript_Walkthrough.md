@@ -10,8 +10,9 @@ Its job is to:
 
 1. Wait for MySQL to become reachable
 2. Wait for schema bootstrap (`users` table) to exist
-3. Insert 6 deterministic test accounts with hashed passwords
-4. Verify seed success and fail fast if anything is wrong
+3. Ensure secure external user IDs (`users.public_id`) exist and are constrained
+4. Insert 6 deterministic test accounts with hashed passwords
+5. Verify seed success and fail fast if anything is wrong
 
 This script is idempotent and safe to run multiple times.
 
@@ -105,6 +106,18 @@ ON DUPLICATE KEY UPDATE
 
 so reruns do not fail and keep records synchronized.
 
+### 6.5) Secure ID Migration Guard (Self-Improving)
+
+Before seeding, the script performs safe in-place schema hardening for older DB volumes:
+
+- Adds `users.public_id` if missing
+- Backfills existing rows with `UUID()`
+- Adds `UNIQUE` constraint `uq_users_public_id`
+- Forces `public_id` to `NOT NULL DEFAULT (UUID())`
+- Creates `login_attempts` if missing (required by auth rate limiting)
+
+This keeps old contributor volumes compatible without requiring `down -v`.
+
 ### 7) Verify Post-Condition
 
 It checks count of seeded usernames and requires at least 6.
@@ -152,5 +165,5 @@ docker compose --env-file docker/.env -f docker/docker-compose.yml logs --no-col
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
   mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" \
-  -e "SELECT username,email,balance_paise FROM users WHERE username LIKE 'test_%' ORDER BY username;"
+  -e "SELECT username,public_id,email,balance_paise FROM users WHERE username LIKE 'test_%' ORDER BY username;"
 ```

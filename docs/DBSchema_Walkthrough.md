@@ -29,6 +29,7 @@ is the modern default and a sensible choice for general text.
 ```sql
 CREATE TABLE users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT (UUID()),
     ...
 ) ENGINE=InnoDB;
 ```
@@ -43,6 +44,17 @@ id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 signed and would allow negative IDs, which are nonsensical for an auto-incremented surrogate
 key. `AUTO_INCREMENT` means MySQL assigns the next available integer on each insert; you
 never set this manually.
+
+### Public ID (Opaque External Identifier)
+
+```sql
+public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT (UUID())
+```
+
+This field is the externally exposed identifier for user search and transfer. It is UUID-based
+and non-sequential, which prevents trivial enumeration attacks against user records. The
+internal numeric `id` remains the primary key for joins and FK performance; `public_id` is
+used at API/UI boundaries.
 
 ### Username and Email
 
@@ -119,14 +131,18 @@ required. Both are `NOT NULL`; a row without timestamps is an anomaly.
 ### Constraints
 
 ```sql
+CONSTRAINT uq_users_public_id UNIQUE (public_id),
 CONSTRAINT uq_users_username UNIQUE (username),
 CONSTRAINT uq_users_email    UNIQUE (email),
-CONSTRAINT chk_users_balance_nonnegative CHECK (balance_paise >= 0)
+CONSTRAINT chk_users_balance_nonnegative CHECK (balance_paise >= 0),
+CONSTRAINT chk_users_public_id_uuid_format CHECK (
+  public_id REGEXP '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+)
 ```
 
-The two `UNIQUE` constraints ensure no two users can share a username or email. MySQL
-automatically creates an index to enforce each `UNIQUE` constraint, so these also serve as
-fast lookup indexes for login queries.
+The `UNIQUE` constraints ensure no two users share `public_id`, `username`, or `email`.
+MySQL automatically creates indexes for these constraints, so they also serve as fast lookup
+indexes for login and external-id operations.
 
 The `CHECK` constraint is the database-level guarantee that a balance can never go below zero.
 Application code checks balance before a transfer, but the `CHECK` is the backstop — even if
@@ -173,14 +189,12 @@ history is not acceptable for a financial application.
 ### Validation Constraints
 
 ```sql
-CONSTRAINT chk_transactions_amount_positive CHECK (amount_paise > 0),
+CONSTRAINT chk_transactions_amount_min_1_rupee CHECK (amount_paise >= 100),
 CONSTRAINT chk_transactions_not_self        CHECK (sender_id <> receiver_id),
 ```
 
-`amount_paise > 0` ensures nobody can transfer zero or negative amounts at the database level.
-Since `amount_paise` is already `BIGINT UNSIGNED`, negative values are already impossible
-at the type level — but zero is still a valid unsigned integer, so the `CHECK` is needed to
-block it.
+`amount_paise >= 100` enforces a minimum transfer of Rs.1.00. Since `amount_paise` is
+stored in paise, `100` means 1 rupee exactly.
 
 `sender_id <> receiver_id` blocks self-transfers. Without this, a user could send money to
 themselves, which is semantically meaningless and could be used to game transaction history
@@ -346,11 +360,30 @@ statements is unaffected.
 
 ---
 
+## Step 5: The `login_attempts` Table
+
+```sql
+CREATE TABLE login_attempts (
+    ip           VARCHAR(45)  NOT NULL,
+    attempts     INT UNSIGNED NOT NULL DEFAULT 0,
+    locked_until INT UNSIGNED NOT NULL DEFAULT 0,
+    last_attempt INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (ip)
+) ENGINE=InnoDB;
+```
+
+This table backs IP-based login throttling. It stores attempt counters and lockout windows
+per source IP so brute-force retries cannot be reset by clearing browser cookies or starting
+new sessions.
+
+---
+
 ## Summary: What Each Table Is Responsible For
 
 | Table | Responsibility | Key Design Choice |
 |---|---|---|
-| `users` | Identity, credentials, balance | Paise integer, ASCII collation, balance CHECK |
+| `users` | Identity, credentials, balance | Dual-ID model (`id` internal + UUID `public_id` external), paise integer, ASCII collation |
 | `transactions` | Financial history | RESTRICT FKs, immutable rows, compound indexes |
 | `activity_logs` | Audit trail | Nullable user_id, username_snapshot, SET NULL FK |
+| `login_attempts` | Brute-force control state | IP-keyed lockout counters for auth throttling |
 | Trigger | Username immutability | DB-level rule, protects snapshot accuracy |

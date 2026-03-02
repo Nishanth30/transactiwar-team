@@ -82,6 +82,7 @@ Expected lines include:
 
 - `MySQL is reachable`
 - `Schema detected; seeding test users`
+- `Ensuring secure public user IDs are present...`
 - `Seeded 6 test users successfully`
 
 2. Check app endpoint:
@@ -108,18 +109,32 @@ Expected tables:
 - `users`
 - `transactions`
 - `activity_logs`
+- `login_attempts`
 
 4. Verify seeded test users:
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
   mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" \
-  -e "SELECT username,email,balance_paise FROM users WHERE username LIKE 'test_%' ORDER BY username;"
+  -e "SELECT username,public_id,email,balance_paise FROM users WHERE username LIKE 'test_%' ORDER BY username;"
 ```
 
 Expected rows:
 
 - `test_alice`, `test_bob`, `test_carol`, `test_dave`, `test_erin`, `test_frank`
+
+5. Verify secure public IDs exist and are unique:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
+  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" \
+  -e "SHOW INDEX FROM users; SELECT username,public_id FROM users ORDER BY id LIMIT 10;"
+```
+
+Expected:
+
+- unique index `uq_users_public_id` is present
+- every user row has a non-null UUID-like `public_id`
 
 ## DB Persistence Check
 

@@ -215,14 +215,14 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
      */
     if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
         $sql = "
-            SELECT id, username, password_hash
+            SELECT id, public_id, username, password_hash
             FROM users
             WHERE email = :id
             LIMIT 1
         ";
     } else {
         $sql = "
-            SELECT id, username, password_hash
+            SELECT id, public_id, username, password_hash
             FROM users
             WHERE username = :id
             LIMIT 1
@@ -255,8 +255,9 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     /* Prevent session fixation */
     session_regenerate_id(true);
 
-    $_SESSION['user_id']  = (int)$user['id'];
-    $_SESSION['username'] = $user['username'];
+    $_SESSION['user_id']        = (int)$user['id'];
+    $_SESSION['public_user_id'] = (string)$user['public_id'];
+    $_SESSION['username']       = $user['username'];
 
     /*
      * Bind session to client IP.
@@ -295,4 +296,51 @@ function require_login(): void
         header('Location: /login.php');
         exit;
     }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Public ID helpers for search + transfer modules
+|--------------------------------------------------------------------------
+*/
+function resolve_user_id_from_public_id(PDO $pdo, string $publicId): ?int
+{
+    $publicId = sanitize_public_user_id($publicId);
+    if ($publicId === null) {
+        return null;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT id
+        FROM users
+        WHERE public_id = :public_id
+        LIMIT 1
+    ");
+    $stmt->execute(['public_id' => $publicId]);
+
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return null;
+    }
+
+    return (int)$row['id'];
+}
+
+function get_user_by_public_id(PDO $pdo, string $publicId): ?array
+{
+    $publicId = sanitize_public_user_id($publicId);
+    if ($publicId === null) {
+        return null;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT id, public_id, username, email, balance_paise, bio, profile_image_path
+        FROM users
+        WHERE public_id = :public_id
+        LIMIT 1
+    ");
+    $stmt->execute(['public_id' => $publicId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $row ?: null;
 }

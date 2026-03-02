@@ -58,6 +58,64 @@ do
 done
 echo "[setup] Schema detected; seeding test users."
 
+echo "[setup] Ensuring secure public user IDs are present..."
+mysql --protocol=tcp --connect-timeout=5 \
+  -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" "$MYSQL_DATABASE" <<'SQL'
+SET @has_public_id_col := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'users'
+    AND column_name = 'public_id'
+);
+SET @add_public_id_col_sql := IF(
+  @has_public_id_col = 0,
+  'ALTER TABLE users ADD COLUMN public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER id',
+  'DO 0'
+);
+PREPARE stmt_add_col FROM @add_public_id_col_sql;
+EXECUTE stmt_add_col;
+DEALLOCATE PREPARE stmt_add_col;
+
+UPDATE users
+SET public_id = UUID()
+WHERE public_id IS NULL OR public_id = '';
+
+SET @has_public_id_idx := (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE()
+    AND table_name = 'users'
+    AND index_name = 'uq_users_public_id'
+);
+SET @add_public_id_idx_sql := IF(
+  @has_public_id_idx = 0,
+  'ALTER TABLE users ADD CONSTRAINT uq_users_public_id UNIQUE (public_id)',
+  'DO 0'
+);
+PREPARE stmt_add_idx FROM @add_public_id_idx_sql;
+EXECUTE stmt_add_idx;
+DEALLOCATE PREPARE stmt_add_idx;
+
+ALTER TABLE users
+  MODIFY public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT (UUID());
+
+SET @has_login_attempts := (
+  SELECT COUNT(*)
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+    AND table_name = 'login_attempts'
+);
+SET @create_login_attempts_sql := IF(
+  @has_login_attempts = 0,
+  'CREATE TABLE login_attempts (ip VARCHAR(45) NOT NULL, attempts INT UNSIGNED NOT NULL DEFAULT 0, locked_until INT UNSIGNED NOT NULL DEFAULT 0, last_attempt INT UNSIGNED NOT NULL DEFAULT 0, PRIMARY KEY (ip)) ENGINE=InnoDB',
+  'DO 0'
+);
+PREPARE stmt_login_table FROM @create_login_attempts_sql;
+EXECUTE stmt_login_table;
+DEALLOCATE PREPARE stmt_login_table;
+SQL
+
 mysql --protocol=tcp --connect-timeout=5 \
   -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" "$MYSQL_DATABASE" <<'SQL'
 INSERT INTO users (username, email, password_hash, balance_paise, bio)

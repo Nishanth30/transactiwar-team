@@ -82,6 +82,7 @@ Executed SQL check:
 Observed tables:
 
 - `activity_logs`
+- `login_attempts`
 - `transactions`
 - `users`
 
@@ -102,6 +103,31 @@ Implemented:
 - `setup` compose service with entrypoint `/bin/sh /setup.sh`
 - mounted script read-only from repo
 - network + env wiring for DB access
+
+### 9) Add secure external user IDs (dual-ID model)
+
+Implemented in:
+
+- `database/init.sql`
+- `docker/setup.sh`
+- `includes/auth.php`
+- `includes/sanitize.php`
+
+What changed:
+
+- Added `users.public_id` (UUID-formatted opaque ID)
+- Added DB constraints (`UNIQUE` + UUID format `CHECK`)
+- Added setup-time auto-migration for existing DB volumes
+- Added setup-time creation guard for `login_attempts` on older volumes
+- Added strict PHP sanitizer for public IDs
+- Added auth helpers for resolving internal IDs from `public_id`
+- Added `public_user_id` to session state
+
+Result:
+
+- Internal numeric IDs remain efficient for joins and FKs
+- External user references are non-sequential and harder to enumerate
+- Existing contributor volumes upgrade without mandatory `down -v`
 
 ---
 
@@ -157,8 +183,12 @@ This keeps app source mount behavior while masking real secrets file path with n
 
 - `docker/docker-compose.yml`
 - `docker/setup.sh`
+- `database/init.sql`
+- `includes/auth.php`
+- `includes/sanitize.php`
 - `README.md`
 - `docs/DockerCompose_Walkthrough.md`
+- `docs/DBSchema_Walkthrough.md`
 - `docs/SetupScript_Walkthrough.md`
 - `docs/SessionChanges_Walkthrough.md`
 

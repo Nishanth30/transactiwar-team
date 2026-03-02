@@ -6,6 +6,7 @@ USE app_database;
 -- 1) Users
 CREATE TABLE users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT (UUID()),
     username VARCHAR(32) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
     email VARCHAR(254) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -15,9 +16,13 @@ CREATE TABLE users (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
+    CONSTRAINT uq_users_public_id UNIQUE (public_id),
     CONSTRAINT uq_users_username UNIQUE (username),
     CONSTRAINT uq_users_email UNIQUE (email),
-    CONSTRAINT chk_users_balance_nonnegative CHECK (balance_paise >= 0)
+    CONSTRAINT chk_users_balance_nonnegative CHECK (balance_paise >= 0),
+    CONSTRAINT chk_users_public_id_uuid_format CHECK (
+      public_id REGEXP '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    )
 ) ENGINE=InnoDB;
 
 -- 2) Money transfers
