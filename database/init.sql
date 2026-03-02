@@ -1,8 +1,3 @@
-CREATE DATABASE IF NOT EXISTS app_database
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_0900_ai_ci;
-USE app_database;
-
 -- 1) Users
 CREATE TABLE users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -23,7 +18,7 @@ CREATE TABLE users (
     CONSTRAINT chk_users_public_id_uuid_format CHECK (
       public_id REGEXP '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     )
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- 2) Money transfers
 CREATE TABLE transactions (
@@ -46,7 +41,7 @@ CREATE TABLE transactions (
 
     INDEX idx_transactions_sender_time (sender_id, created_at),
     INDEX idx_transactions_receiver_time (receiver_id, created_at)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- 3) Activity logs
 CREATE TABLE activity_logs (
@@ -63,7 +58,7 @@ CREATE TABLE activity_logs (
 
     INDEX idx_activity_logs_user_time (user_id, created_at),
     INDEX idx_activity_logs_username_time (username_snapshot, created_at)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- 4) Enforce: profile updates allowed except username
 DELIMITER //
@@ -86,4 +81,4 @@ CREATE TABLE login_attempts (
     last_attempt INT UNSIGNED NOT NULL DEFAULT 0,
 
     PRIMARY KEY (ip)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

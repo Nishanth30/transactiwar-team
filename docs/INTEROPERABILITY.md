@@ -38,6 +38,7 @@ All members must use these runtime assumptions:
 ## Data and DB contract
 
 - `database/init.sql` must remain idempotent for fresh setup.
+- `database/init.sql` must be database-agnostic: no `CREATE DATABASE`, no `USE`.
 - Schema changes require review from Capybara and Dog before merge.
 - If a schema change is not backward compatible, PR must include:
 `breaking-change` label and explicit local reset instructions.

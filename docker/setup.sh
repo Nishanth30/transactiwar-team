@@ -51,7 +51,20 @@ until [ "$(mysql --protocol=tcp --connect-timeout=2 -N -s \
 do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge "$DB_WAIT_ATTEMPTS" ]; then
-    echo "[setup] users table was not found in time." >&2
+    db_exists="$(mysql --protocol=tcp --connect-timeout=2 -N -s \
+      -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" \
+      -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='${MYSQL_DATABASE}';" \
+      2>/dev/null || true)"
+    db_exists="$(printf "%s" "$db_exists" | tr -d '[:space:]')"
+
+    if [ "$db_exists" = "1" ]; then
+      echo "[setup] users table was not found in database '${MYSQL_DATABASE}' within timeout." >&2
+      echo "[setup] Verify database/init.sql is mounted to /docker-entrypoint-initdb.d/init.sql and uses CREATE TABLE statements only." >&2
+    else
+      echo "[setup] Database '${MYSQL_DATABASE}' does not exist for this initialized MySQL volume." >&2
+      echo "[setup] This commonly happens when MYSQL_DATABASE changes after mysql_data was created." >&2
+      echo "[setup] Recreate state: docker compose --env-file docker/.env -f docker/docker-compose.yml down -v && docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build" >&2
+    fi
     exit 1
   fi
   sleep "$DB_WAIT_SLEEP_SECONDS"

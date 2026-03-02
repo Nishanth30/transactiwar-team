@@ -78,6 +78,8 @@ volumes:
 - `mysql_data` persists DB files across container recreation.
 - `init.sql` is auto-executed only when the data directory is empty.
 - `:ro` protects host SQL file from container-side modification.
+- `init.sql` must be database-agnostic: no `CREATE DATABASE` and no `USE`.
+  Docker chooses the active DB from `MYSQL_DATABASE` and runs init there.
 
 ### Health Check
 
@@ -243,6 +245,8 @@ volumes:
 
 Persistent DB storage survives `docker compose down` and container recreation.
 Use `docker compose down -v` only when intentionally resetting DB state.
+If `MYSQL_DATABASE` is changed after first boot, run `down -v` once so MySQL
+can reinitialize the target database cleanly.
 
 ---
 

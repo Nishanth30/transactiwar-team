@@ -131,6 +131,32 @@ Result:
 
 ---
 
+## Deployment Reliability Fix: Split-Brain DB Bootstrap
+
+### Issue discovered
+
+`setup` could fail with `users table was not found in time` when schema bootstrap and runtime DB target diverged.
+
+### Root cause
+
+`database/init.sql` previously included database-selection statements (`CREATE DATABASE` / `USE`), while runtime services select DB via `MYSQL_DATABASE`.
+
+That allows schema creation in one DB while `setup` and app connect to another.
+
+### Fix
+
+- Removed database-selection statements from `database/init.sql`
+- Kept schema file database-agnostic (table DDL only)
+- Added clearer timeout diagnostics in `docker/setup.sh` for stale volumes or DB-name drift
+
+### Validation
+
+- Tested fresh startup with `docker/.env.example` (professor flow)
+- Tested startup with alternate `MYSQL_DATABASE=transactiwar`
+- Verified `setup` exits `0` and expected tables exist in selected database
+
+---
+
 ## Production-Style Reliability Fix Applied During Validation
 
 ### Issue discovered

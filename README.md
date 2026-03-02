@@ -36,7 +36,7 @@ docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
 Important:
 
 - The first run initializes MySQL users/passwords from your current `docker/.env`.
-- If you later change `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, or `MYSQL_PASSWORD`, reset DB volume once:
+- If you later change `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_PASSWORD`, or `MYSQL_DATABASE`, reset DB volume once:
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
@@ -210,6 +210,19 @@ Why this happens:
 
 - MySQL credentials from `docker/.env` are applied only when `mysql_data` volume is created.
 - Existing volumes keep old credentials until you recreate the volume.
+
+`setup` exits with `users table was not found`:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml logs --no-color setup
+docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
+```
+
+Why this happens:
+
+- Either `MYSQL_DATABASE` changed after `mysql_data` was initialized, or schema bootstrap did not run on first DB init.
+- `database/init.sql` must remain database-agnostic (no `CREATE DATABASE`, no `USE`) and contain table DDL only.
 
 ## Walkthrough Docs
 

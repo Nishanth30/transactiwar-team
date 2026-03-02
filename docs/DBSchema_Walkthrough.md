@@ -2,25 +2,24 @@
 
 ---
 
-## Step 0: Database Creation
+## Step 0: Database Selection (Docker-native)
+
+This project intentionally keeps `database/init.sql` database-agnostic:
+
+- no `CREATE DATABASE ...`
+- no `USE ...`
+
+The database is chosen by Docker through `MYSQL_DATABASE` from `docker/.env`. MySQL's
+entrypoint creates that database and runs `init.sql` against it.
+
+This avoids split-brain bootstraps where schema is created in one database while application
+and setup services connect to another.
+
+To preserve text behavior consistently across environments, each table is created with:
 
 ```sql
-CREATE DATABASE IF NOT EXISTS app_database
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_0900_ai_ci;
-USE app_database;
+DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 ```
-
-Before any tables, we set up the database itself with two properties.
-
-**`utf8mb4`** is MySQL's full Unicode encoding. MySQL's older `utf8` is a 3-byte subset and
-cannot store emoji or many non-Latin characters. `utf8mb4` is 4-byte and handles the full
-Unicode range — important for bio text and comments where users may type anything.
-
-**`utf8mb4_0900_ai_ci`** is the collation — the ruleset MySQL uses to compare and sort
-strings. `0900` refers to the Unicode 9.0 standard. `ai` means accent-insensitive (`e` and
-`é` are treated as equal). `ci` means case-insensitive (`Alice` and `alice` are equal). This
-is the modern default and a sensible choice for general text.
 
 ---
 

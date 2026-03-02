@@ -86,6 +86,10 @@ The script polls `information_schema.tables` until:
 - table `users` exists in `${MYSQL_DATABASE}`
 
 This guarantees inserts happen only after `init.sql` has completed.
+If timeout is reached, the script emits targeted diagnostics:
+
+- DB missing: likely `MYSQL_DATABASE` changed after volume creation (requires `down -v`)
+- DB exists but no `users` table: schema bootstrap (`init.sql`) was not applied correctly
 
 ### 6) Seed Test Users (Idempotent)
 
