@@ -309,34 +309,8 @@ function _getLogIp(): string {
  *       $error = 'Too many attempts. Try again in 5 minutes.';
  *   }
  */
-function countRecentFailedLogins(string $ip): int {
-    global $pdo;
 
-    if (!isset($pdo)) {
-        return 0; // Can't check — allow through (fail open for availability)
-    }
 
-    try {
-        $stmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM activity_logs
-             WHERE webpage     = ?
-             AND   client_ip   = ?
-             AND   created_at >= NOW() - INTERVAL ? SECOND'
-        );
-
-        $stmt->execute([
-            LOG_LOGIN_FAIL,
-            $ip,
-            BRUTE_WINDOW_SECS,
-        ]);
-
-        return (int)$stmt->fetchColumn();
-
-    } catch (Throwable $e) {
-        error_log('countRecentFailedLogins error: ' . $e->getMessage());
-        return 0;
-    }
-}
 
 /**
  * Check if an IP is currently brute forcing.
@@ -348,10 +322,7 @@ function countRecentFailedLogins(string $ip): int {
  *       die('Too many attempts.');
  *   }
  */
-function isIpBruteForcing(): bool {
-    $ip = _getLogIp();
-    return countRecentFailedLogins($ip) >= MAX_LOGIN_FAILS;
-}
+
 
 
 // ══════════════════════════════════════════════════════════════════
@@ -594,6 +565,217 @@ function getUserLoginHistory(int $userId, int $limit = 20): array {
     } catch (Throwable $e) {
         error_log('getUserLoginHistory error: ' . $e->getMessage());
         return [];
+    }
+}
+
+// REPLACE countRecentFailedLogins() and isIpBruteForcing()
+// in logger.php with these updated versions
+
+/**
+ * Count failed login attempts from an IP.
+ * Now uses M5's login_attempts table instead of activity_logs.
+ *
+ * Usage in auth.php (Member 1):
+ *   $fails = countRecentFailedLogins($ip);
+ */
+function countRecentFailedLogins(string $ip): int {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return 0;
+    }
+
+    try {
+        // Validate IP first
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            return 0;
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT attempts, locked_until
+             FROM login_attempts
+             WHERE ip = ?'
+        );
+        $stmt->execute([$ip]);
+        $row = $stmt->fetch();
+
+        if (!$row) {
+            return 0; // No record — never failed
+        }
+
+        // Check if lockout window has expired
+        if ($row['locked_until'] > 0 && time() > $row['locked_until']) {
+            // Lockout expired — reset counter
+            _resetLoginAttempts($ip);
+            return 0;
+        }
+
+        return (int)$row['attempts'];
+
+    } catch (Throwable $e) {
+        error_log('countRecentFailedLogins error: ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * Record a failed login attempt for this IP.
+ * Call this every time login fails.
+ *
+ * Usage in auth.php (Member 1):
+ *   recordFailedLogin($ip);
+ */
+function recordFailedLogin(string $ip): void {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return;
+    }
+
+    try {
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            return;
+        }
+
+        $now = time();
+
+        // Insert or update — if IP exists increment, else create
+        $stmt = $pdo->prepare(
+            'INSERT INTO login_attempts (ip, attempts, last_attempt)
+             VALUES (?, 1, ?)
+             ON DUPLICATE KEY UPDATE
+                attempts     = attempts + 1,
+                last_attempt = ?'
+        );
+        $stmt->execute([$ip, $now, $now]);
+
+        // Check if threshold crossed — set lockout
+        $count = countRecentFailedLogins($ip);
+        if ($count >= MAX_LOGIN_FAILS) {
+            _lockIp($ip);
+            logActivity(LOG_BRUTE_FORCE);
+        }
+
+    } catch (Throwable $e) {
+        error_log('recordFailedLogin error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Lock an IP for BRUTE_WINDOW_SECS seconds.
+ * Internal — called automatically by recordFailedLogin().
+ */
+function _lockIp(string $ip): void {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return;
+    }
+
+    try {
+        $lockedUntil = time() + BRUTE_WINDOW_SECS;
+
+        $stmt = $pdo->prepare(
+            'UPDATE login_attempts
+             SET locked_until = ?
+             WHERE ip = ?'
+        );
+        $stmt->execute([$lockedUntil, $ip]);
+
+    } catch (Throwable $e) {
+        error_log('_lockIp error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Reset login attempts for an IP after lockout expires.
+ * Internal — called automatically.
+ */
+function _resetLoginAttempts(string $ip): void {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'UPDATE login_attempts
+             SET attempts     = 0,
+                 locked_until = 0
+             WHERE ip = ?'
+        );
+        $stmt->execute([$ip]);
+
+    } catch (Throwable $e) {
+        error_log('_resetLoginAttempts error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Check if current IP is currently locked out.
+ * Updated to use login_attempts table.
+ *
+ * Usage in login.php:
+ *   if (isIpBruteForcing()) { die('Too many attempts'); }
+ */
+function isIpBruteForcing(): bool {
+    global $pdo;
+
+    $ip = _getLogIp();
+
+    if (!isset($pdo)) {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT locked_until
+             FROM login_attempts
+             WHERE ip = ?'
+        );
+        $stmt->execute([$ip]);
+        $row = $stmt->fetch();
+
+        if (!$row) {
+            return false;
+        }
+
+        // Check if still within lockout window
+        if ($row['locked_until'] > 0 && time() < $row['locked_until']) {
+            return true; // Still locked
+        }
+
+        return false;
+
+    } catch (Throwable $e) {
+        error_log('isIpBruteForcing error: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Reset login attempts on successful login.
+ * Call this in auth.php after successful login.
+ *
+ * Usage in auth.php (Member 1):
+ *   clearLoginAttempts($ip);
+ */
+function clearLoginAttempts(string $ip): void {
+    global $pdo;
+
+    if (!isset($pdo)) {
+        return;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'DELETE FROM login_attempts WHERE ip = ?'
+        );
+        $stmt->execute([$ip]);
+
+    } catch (Throwable $e) {
+        error_log('clearLoginAttempts error: ' . $e->getMessage());
     }
 }
 
