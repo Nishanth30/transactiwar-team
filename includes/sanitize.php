@@ -757,6 +757,38 @@ function truncate(string $str, int $length, string $suffix = '...'): string {
 }
 
 
+/**
+ * Validate and sanitize a UUID (public_id from users table).
+ * M5 added public_id as external identifier — use this
+ * instead of sanitize_uint() when handling user search/transfer.
+ *
+ * Usage (Member 3 — search and transfer):
+ *   $publicId = sanitize_uuid($_POST['receiver_public_id'] ?? '');
+ *   if ($publicId === null) { $error = 'Invalid user ID'; }
+ */
+function sanitize_uuid(mixed $value): ?string {
+    if ($value === null || $value === '') {
+        return null;
+    }
+
+    $str = trim((string)$value);
+
+    // Remove null bytes
+    $str = str_replace("\0", '', $str);
+
+    // Validate UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    if (!preg_match(
+        '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/',
+        $str
+    )) {
+        return null;
+    }
+
+    // Normalize to lowercase
+    return strtolower($str);
+}
+
+
 // ## Quick Reference Card for Team
 // ```
 // ┌─────────────────────────────────────────────────────────────────┐
