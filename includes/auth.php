@@ -163,12 +163,21 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
             'email'         => $email,
             'password_hash' => $hash
         ]);
+        //Adding this
+        if (function_exists('logActivity')) {
+            logActivity(LOG_REGISTER);
+        }
+
 
         return true;
 
     } catch (PDOException $e) {
         // SQLSTATE 23000 = integrity constraint violation (duplicate key)
         if ($e->getCode() === '23000') {
+            // Adding this
+            if (function_exists('logActivity')) {
+                logActivity(LOG_INVALID_INPUT);
+            }
             return 'duplicate';
         }
 
@@ -203,6 +212,11 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
 
     // Check IP lockout before doing any work
     if (is_ip_locked($pdo, $ip)) {
+        // Adding this- when IP is locked
+        /* if (function_exists('logActivity')) {
+            logActivity(LOG_LOGIN_LOCKED);
+        }
+        */
         usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
         return 'locked';
     }
@@ -245,7 +259,13 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
 
     if (!$user || !$valid) {
+
         record_failed_attempt($pdo, $ip);
+        // ADD THIS
+        if (function_exists('logActivity')) {
+            logActivity(LOG_LOGIN_FAIL);
+        }
+
         return false;
     }
 
@@ -264,7 +284,10 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
      * Invalidates stolen cookies used from a different IP.
      */
     $_SESSION['ip'] = $ip;
-
+    // ADD THIS - on success (Change 5)
+    if (function_exists('logActivity')) {
+        logActivity(LOG_LOGIN_SUCCESS);
+    }
     return true;
 }
 
@@ -278,7 +301,16 @@ function require_login(): void
 {
     ensure_session_started();
 
+    /* if (!isset($_SESSION['user_id'])) {
+        header('Location: /login.php');
+        exit;
+    }
+    */
+
     if (!isset($_SESSION['user_id'])) {
+        if (function_exists('logActivity')) {
+            logActivity(LOG_ACCESS_DENIED);  // who tried to access without login
+        }
         header('Location: /login.php');
         exit;
     }
@@ -290,6 +322,10 @@ function require_login(): void
     $ip = sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
 
     if (($_SESSION['ip'] ?? '') !== $ip) {
+         // ADD THIS - on IP mismatch (Change 6)
+        if (function_exists('logActivity')) {
+            logSecurityEvent(LOG_SESSION_HIJACK, 'IP mismatch in require_login');
+        }
         session_unset();
         session_destroy();
 
@@ -305,7 +341,9 @@ function require_login(): void
 */
 function resolve_user_id_from_public_id(PDO $pdo, string $publicId): ?int
 {
-    $publicId = sanitize_public_user_id($publicId);
+    // $publicId = sanitize_public_user_id($publicId);   Rename it - Change 7
+    $publicId = sanitize_uuid($publicId);
+
     if ($publicId === null) {
         return null;
     }
@@ -328,7 +366,8 @@ function resolve_user_id_from_public_id(PDO $pdo, string $publicId): ?int
 
 function get_user_by_public_id(PDO $pdo, string $publicId): ?array
 {
-    $publicId = sanitize_public_user_id($publicId);
+    // $publicId = sanitize_public_user_id($publicId);
+    $publicId = sanitize_uuid($publicId);
     if ($publicId === null) {
         return null;
     }
@@ -343,4 +382,36 @@ function get_user_by_public_id(PDO $pdo, string $publicId): ?array
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     return $row ?: null;
+}
+
+
+//Adding logic for logout_user
+function logout_user(): void
+{
+    ensure_session_started();
+
+    // Log BEFORE destroying session
+    // user_id still available here
+    if (function_exists('logActivity')) {
+        logActivity(LOG_LOGOUT);
+    }
+
+    // Wipe session data
+    $_SESSION = [];
+
+    // Delete cookie from browser
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(
+            session_name(), '',
+            time() - 42000,
+            $params['path'],
+            $params['domain'],
+            $params['secure'],
+            $params['httponly']
+        );
+    }
+
+    // Destroy server side session
+    session_destroy();
 }
