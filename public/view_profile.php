@@ -9,7 +9,7 @@ if (file_exists(__DIR__ . '/../includes/header.php')) {
     echo "<!DOCTYPE html><html><head><title>Agent Profile</title></head><body>";
 }
 ?>
-
+<?php include("header.html"); ?>
 <div style="max-width: 600px; margin: 40px auto; font-family: sans-serif;">
     
     <h1>Agent: <?php echo $profileData['username']; ?></h1>
@@ -35,11 +35,12 @@ if (file_exists(__DIR__ . '/../includes/header.php')) {
         
     <?php else: ?>
         
-        <a href="transfer.php?target_uuid=<?php echo $profileData['uuid']; ?>" style="padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px;">Initiate Transfer to Agent</a>
+        <a href="payment_page.php?target_uuid=<?php echo $profileData['uuid']; ?>" style="padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px;">Initiate Transfer to Agent</a>
         
     <?php endif; ?>
 
 </div>
 
+<?php include("footer.html"); ?>
 </body>
 </html>
