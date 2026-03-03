@@ -16,7 +16,7 @@ if (file_exists(__DIR__ . '/../includes/header.php')) {
     <p style="color: gray; font-family: monospace;">
         Public Agent ID: <?php echo $profileData['uuid']; ?>
     </p>
-    <img src="uploads/<?php echo $profileData['image']; ?>" width="150" style="border-radius: 8px;" alt="Profile Pic">
+<img src="uploads/<?php echo $profileData['image']; ?>" width="150" style="border-radius: 8px;" alt="Profile Pic">
     
     <div style="margin-top: 20px; padding: 15px; background: #f4f4f4; border-radius: 5px;">
         <h3>Operational Bio</h3>
