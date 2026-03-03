@@ -13,7 +13,7 @@ RUN set -eux; \
       echo 'Header always set X-Content-Type-Options "nosniff"'; \
       echo 'Header always set X-Frame-Options "DENY"'; \
       echo 'Header always set Referrer-Policy "no-referrer"'; \
-      echo 'Header always set Content-Security-Policy "default-src '\''none'\''; frame-ancestors '\''none'\''; base-uri '\''none'\''"'; \
+      echo 'Header always set Content-Security-Policy "default-src '\''none'\''; style-src '\''self'\''; img-src '\''self'\'' data:; frame-ancestors '\''none'\''; base-uri '\''none'\''"'; \
     } > /etc/apache2/conf-available/hardening.conf; \
     a2enconf hardening; \
     { \
