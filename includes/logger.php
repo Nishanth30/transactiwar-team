@@ -74,6 +74,10 @@ define('LOG_SUSPICIOUS',        'SUSPICIOUS_ACTIVITY');
 // Navigation
 define('LOG_PAGE_VIEW',         'PAGE_VIEW');
 
+// Session events — triggered by session.php
+define('LOG_SESSION_TIMEOUT',   'SESSION_TIMEOUT');
+define('LOG_SESSION_ABSOLUTE',  'SESSION_TIMEOUT_ABSOLUTE');
+define('LOG_SESSION_HIJACK',    'SESSION_HIJACK_DETECTED');
 
 // ══════════════════════════════════════════════════════════════════
 //  SECTION 1 — CORE LOGGING FUNCTION

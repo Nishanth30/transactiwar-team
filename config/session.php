@@ -45,6 +45,26 @@ session_set_cookie_params([
 /* ---------- Start session ---------- */
 session_start();
 
+//Adding : resolving issue
+// Missing UA + IP Fingerprinting
+// Session fingerprint check -
+$currentFingerprint = hash('sha256',
+    ($_SERVER['HTTP_USER_AGENT'] ?? '') .
+    $_SERVER['REMOTE_ADDR']
+);
+
+if (!isset($_SESSION['fingerprint'])) {
+    // First request — store fingerprint
+    $_SESSION['fingerprint'] = $currentFingerprint;
+} elseif (!hash_equals($_SESSION['fingerprint'], $currentFingerprint)) {
+    // Fingerprint mismatch — possible session hijack
+    if (function_exists('logActivity')) {
+        logActivity('SESSION_HIJACK_DETECTED');
+    }
+    resetSession($now);
+}
+
+
 /* ---------- Timing policies ---------- */
 $inactivityTimeout = 1800;   // 30 minutes inactivity
 $absoluteLifetime  = 3600;   // 1 hour max session age
@@ -53,7 +73,17 @@ $regenInterval     = 300;    // rotate ID every 5 minutes
 $now = time();
 
 /* ---------- Helper — wipe and restart a clean session ---------- */
+/* Problem:                                                      
+│   resetSession() calls session_destroy()                        
+│   then session_start() again                                    
+│   But session_start() uses the OLD cookie settings             
+│   because session_set_cookie_params() was                       
+│   called before the first session_start()                       
+│   The second session_start() may not                          
+│   inherit all secure settings correctly   */
 function resetSession(int $now): void {
+    global $secure; // bring in the $secure variable
+
     $_SESSION = [];
 
     if (ini_get('session.use_cookies')) {
@@ -69,12 +99,44 @@ function resetSession(int $now): void {
     }
 
     session_destroy();
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path'     => '/',
+        'domain'   => '',
+        'secure'   => $secure,
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ]);
+
     session_start();
 
     $_SESSION['created_at']    = $now;
     $_SESSION['last_activity'] = $now;
     $_SESSION['last_regen']    = $now;
 }
+// function resetSession(int $now): void {
+//     $_SESSION = [];
+
+//     if (ini_get('session.use_cookies')) {
+//         $params = session_get_cookie_params();
+//         setcookie(
+//             session_name(), '',
+//             time() - 42000,
+//             $params['path'],
+//             $params['domain'],
+//             $params['secure'],
+//             $params['httponly']
+//         );
+//     }
+
+//     session_destroy();
+//     session_start();
+
+//     $_SESSION['created_at']    = $now;
+//     $_SESSION['last_activity'] = $now;
+//     $_SESSION['last_regen']    = $now;
+// }
 
 /* ---------- Initialize session metadata ---------- */
 if (!isset($_SESSION['created_at']))    { $_SESSION['created_at']    = $now; }
@@ -83,12 +145,31 @@ if (!isset($_SESSION['last_regen']))    { $_SESSION['last_regen']    = $now; }
 
 /* ---------- Inactivity timeout ---------- */
 if (($now - $_SESSION['last_activity']) > $inactivityTimeout) {
+    // Adding Log activity
+    if (function_exists('logActivity')) {
+        logActivity('SESSION_TIMEOUT_INACTIVITY');
+    }
     resetSession($now);
 }
 
 /* ---------- Absolute lifetime enforcement ---------- */
 if (($now - $_SESSION['created_at']) > $absoluteLifetime) {
+    // Adding Log activity
+     if (function_exists('logActivity')) {
+        logActivity('SESSION_TIMEOUT_ABSOLUTE');
+    }
     resetSession($now);
+}
+
+//Adding : No HTTPS Warning in Development
+/* Problem:                                                      │
+│   On localhost $secure = false                                  │
+│   Cookie sent without Secure flag                               │
+│   Fine for dev but risky if deployed                            │
+│   without noticing      */
+if (!$secure && getenv('APP_ENV') !== 'production') {
+    error_log('WARNING: Session cookie is NOT secure.' .
+              ' HTTPS not detected. OK for localhost only.');
 }
 
 /* ---------- Periodic session ID rotation ---------- */

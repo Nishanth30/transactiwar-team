@@ -7,6 +7,7 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/sanitize.php';
+// ── CORRECT LOAD ORDER ────────────────────────────────────────────
 
 $error = '';
 
@@ -18,6 +19,10 @@ if (isset($_SESSION['user_id'])) {
 
 /* Handle login submit */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // if (isIpBruteForcing()) {
+    //     logActivity(LOG_BRUTE_FORCE);                // Fix 3 — log brute force
+    //     $error = 'Too many attempts. Please try again later.';
+    // }
 
     verifyCsrf();
 
@@ -26,8 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($usernameOrEmail === '' || $password === '') {
         $error = 'All fields are required.';
+        // logActivity(LOG_INVALID_INPUT);          // Fix 3 — log invalid input
     } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
         $error = 'Invalid credentials.';
+        // logActivity(LOG_INVALID_INPUT);          // Fix 3 — log invalid input
     } else {
         try {
             $success = login_user($pdo, $usernameOrEmail, $password);
@@ -37,16 +44,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             } else {
                 $error = 'Invalid credentials.';
+                //  logActivity(LOG_LOGIN_FAIL);     // Fix 3 — log failed login
             }
 
         } catch (Throwable $e) {
             error_log($e->getMessage());
             $error = 'Login failed.';
+            // logActivity(LOG_INVALID_INPUT);      // Fix 3 — log exception path
         }
     }
 }
-
+// Fix 3 — log every page visit
+// logActivity(LOG_PAGE_VIEW);
 ?>
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
