@@ -61,7 +61,7 @@ if (!isset($_SESSION['fingerprint'])) {
     if (function_exists('logActivity')) {
         logActivity('SESSION_HIJACK_DETECTED');
     }
-    resetSession($now);
+    resetSession(time());
 }
 
 
