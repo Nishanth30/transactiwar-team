@@ -26,7 +26,7 @@ if (isset($_SESSION['transfer_error'])) {
 <div>
     <h2>❌ Transfer Failed</h2>
     <p>Something went wrong. Please try again.</p>
-    <a href="javascript:history.back()">Go Back</a>
+    <a href="index.php">Go Back to Home Page</a>
 </div>
 <?php include("footer.html"); ?>
 </body>

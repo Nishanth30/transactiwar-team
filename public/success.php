@@ -21,7 +21,7 @@ include("header.html");
 <div>
     <h2>✅ Transfer Successful</h2>
     <p>Your payment was completed successfully.</p>
-    <a href="dashboard.php">Back to Dashboard</a>
+    <a href="index.php">Back to Dashboard</a>
 </div>
 <?php include("footer.html"); ?>
 </body>
