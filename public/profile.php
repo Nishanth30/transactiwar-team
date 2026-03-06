@@ -1,8 +1,11 @@
 <?php 
+// 1. Load the backend logic
 require_once __DIR__ . '/../includes/profile_update_logic.php'; 
 
+// 2. Activate the HTTP Security Headers
 if (file_exists(__DIR__ . '/../includes/header.php')) {
     require_once __DIR__ . '/../includes/header.php';
+    send_security_headers(); 
 } else {
     echo "<!DOCTYPE html><html><head><title>Edit Profile</title></head><body>";
 }

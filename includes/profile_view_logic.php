@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/sanitize.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/logger.php'; // 🆕 ADDED: The new Logger framework
 
 // 2. BEAVER'S AUTHENTICATION
 // This single function handles session_start, checks if logged in, 
@@ -41,15 +42,19 @@ try {
     $stmt->execute([':val' => $bind_val]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
+    // 🆕 UPGRADED: Log the system failure via the framework before dying
     error_log("Profile View DB Error: " . $e->getMessage());
+    logSecurityEvent(LOG_SUSPICIOUS, "Database error on profile view"); 
     die("A system error occurred. Our engineers have been notified.");
 }
 
 if (!$user) { 
+    // 🆕 UPGRADED: Log people probing for fake IDs
+    logSecurityEvent(LOG_INVALID_INPUT, "Attempted to view missing profile: " . escape_output($bind_val));
     die("Agent not found or does not exist."); 
 }
 
-// 5. IRONCLAD DATA PACKAGING (Using Dog's `escape_output`)
+// 5. IRONCLAD DATA PACKAGING
 // We prep the data so the UI dev literally cannot cause an XSS attack.
 $profileData = [
     'username' => escape_output($user['username']),
@@ -64,20 +69,13 @@ if ($profileData['is_mine']) {
     $profileData['balance_rupees'] = number_format($user['balance_paise'] / 100, 2);
 }
 
-// 7. SECURITY AUDIT LOGGING (Using Dog's `get_client_ip`)
-try {
-    $client_ip = get_client_ip();
-    $webpage_visited = '/view_profile.php' . ($target_uuid ? '?id=' . $profileData['uuid'] : '');
-
-    $log_stmt = $pdo->prepare("INSERT INTO activity_logs (user_id, username_snapshot, webpage, client_ip) VALUES (:viewer_id, :target_username, :page, :ip)");
-    $log_stmt->execute([
-        ':viewer_id'       => $viewer_internal_id,
-        ':target_username' => $profileData['username'],
-        ':page'            => $webpage_visited,
-        ':ip'              => $client_ip
-    ]);
-} catch (PDOException $e) {
-    error_log("Security Audit Log Failed: " . $e->getMessage());
+// 7. SECURITY AUDIT LOGGING (Using the framework)
+// 🆕 UPGRADED: Determine if they are viewing themselves or snooping on someone else
+if ($profileData['is_mine']) {
+    logActivity(LOG_PROFILE_VIEW);
+} else {
+    // Append the target's username so the monitor shows WHO they are looking at
+    logActivity(LOG_PROFILE_OTHER . ':' . $profileData['username']);
 }
 
 unset($user); 
