@@ -2,21 +2,25 @@
 // 1. Boot up the engine 
 require_once __DIR__ . '/../includes/profile_view_logic.php'; 
 
-// 2. Inject Beaver's Header
+// 2. Activate the HTTP Security Headers
 if (file_exists(__DIR__ . '/../includes/header.php')) {
     require_once __DIR__ . '/../includes/header.php';
+    send_security_headers(); 
 } else {
     echo "<!DOCTYPE html><html><head><title>Agent Profile</title></head><body>";
 }
 ?>
+
 <?php include("header.html"); ?>
+
 <div style="max-width: 600px; margin: 40px auto; font-family: sans-serif;">
     
     <h1>Agent: <?php echo $profileData['username']; ?></h1>
     <p style="color: gray; font-family: monospace;">
         Public Agent ID: <?php echo $profileData['uuid']; ?>
     </p>
-<img src="uploads/<?php echo $profileData['image']; ?>" width="150" style="border-radius: 8px;" alt="Profile Pic">
+    
+    <img src="uploads/<?php echo $profileData['image']; ?>" width="150" style="border-radius: 8px;" alt="Profile Pic">
     
     <div style="margin-top: 20px; padding: 15px; background: #f4f4f4; border-radius: 5px;">
         <h3>Operational Bio</h3>

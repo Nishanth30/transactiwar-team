@@ -5,6 +5,7 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../includes/sanitize.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/logger.php'; // 🆕 ADDED: The Logger
 
 // 1. IDENTITY VERIFICATION (Kills IDOR)
 require_login();
@@ -40,6 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Defense 1: Hard Size Limit (2MB max) to prevent DOS
         if ($file['size'] > 2097152) {
             $error_message = "File is too large. Maximum size is 2MB.";
+            // 🆕 ADDED: Ring the alarm for oversized files
+            logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "File exceeded 2MB limit"); 
         } else {
             // Defense 2: True MIME Type Check (Don't trust the browser)
             $finfo = new finfo(FILEINFO_MIME_TYPE);
@@ -48,6 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!in_array($mime_type, $allowed_mimes, true)) {
                 $error_message = "Invalid file format. Only JPG, PNG, GIF, and WEBP are allowed.";
+                // 🆕 ADDED: Ring the alarm for hacking attempts (fake images)
+                logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "Invalid MIME type: " . $mime_type); 
             } else {
                 // Defense 3: Secure Extension & Filename (Kills Directory Traversal)
                 $safe_filename = sanitize_filename($file['name']);
@@ -81,8 +86,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute($bind_params);
             $update_success = true;
 
+            // 🆕 ADDED: Log the successful profile update for the audit trail
+            logActivity(LOG_PROFILE_UPDATE); 
+
             // Defense 5: Storage Exhaustion Cleanup
-            // If we successfully saved a NEW image, delete the OLD image from the hard drive
             if ($new_file_destination !== null && $old_image_path !== null) {
                 $old_file_full_path = __DIR__ . '/../public/uploads/' . basename($old_image_path);
                 if (file_exists($old_file_full_path) && is_file($old_file_full_path)) {
