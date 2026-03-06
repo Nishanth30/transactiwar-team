@@ -14,13 +14,13 @@ require_login();
 
 // If form was submitted, hand off to backend processor
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrf();
+
     require_once __DIR__ . '/../includes/process_payment.php';
     exit; // process_payment.php will redirect, but exit here as safety net
 }
 
 // GET — show the payment form
-$username   = get_str('username');
+$username = get_str('username');
 $targetUuid = get_str('target_uuid');
 
 $stmt = $pdo->prepare("SELECT id, balance_paise FROM users WHERE id = ? LIMIT 1");
