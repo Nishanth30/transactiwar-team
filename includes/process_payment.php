@@ -11,12 +11,13 @@ require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/sanitize.php';
 require_once __DIR__ . '/logger.php';
 require_once __DIR__ . '/../config/db.php';
+// TEMP DEBUG — remove after fixing
 
 require_login();
 // ── CSRF verification ────────────────────────────────────────────
 // Must be the very first thing — before reading any POST data.
 // Kills the request with 403 if token is missing, expired, or forged.
-// verifyCsrf();
+verifyCsrf();
 
 // ── Collect and sanitize inputs ──────────────────────────────────
 
