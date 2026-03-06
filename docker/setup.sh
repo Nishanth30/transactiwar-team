@@ -133,12 +133,12 @@ mysql --protocol=tcp --connect-timeout=5 \
   -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" "$MYSQL_DATABASE" <<'SQL'
 INSERT INTO users (username, email, password_hash, balance_paise, bio)
 VALUES
-  ('test_alice', 'test.alice@transactiwar.local', '$2y$12$kZ1vW/JXsxfvwvvJNoXr5eVbUHpSln2FUL6jgsdjtVVy1VTQ.0YeW', 10000, 'Seed account for integration checks'),
-  ('test_bob', 'test.bob@transactiwar.local', '$2y$12$bWPnXJ6H9Smc2sNygiO/FOoMQrYM.MI5LhPQ8o63nCvphSLdWvt66', 10000, 'Seed account for integration checks'),
-  ('test_carol', 'test.carol@transactiwar.local', '$2y$12$g9LSD7yeIFalx6T0CO0uTOD1OgUIe2aEEpv92t2N4JJvDgzpAufaW', 10000, 'Seed account for integration checks'),
-  ('test_dave', 'test.dave@transactiwar.local', '$2y$12$WLbaF/bLjSMbvjMFYEOhAOjrs.Ils9xFAi7yR2w9EMC7USrwiau1G', 10000, 'Seed account for integration checks'),
-  ('test_erin', 'test.erin@transactiwar.local', '$2y$12$dU0lH.fVV3yAf/ENs.l7qunMPfjnhdto446UEGaQ1exjJwZHVOjMu', 10000, 'Seed account for integration checks'),
-  ('test_frank', 'test.frank@transactiwar.local', '$2y$12$hx9.AyZ7zf9e/fcdflWMA.GOQYIC/CmYbXZc9SGcu0ut96o6YyBsu', 10000, 'Seed account for integration checks')
+  ('nishanth', 'nishanth@iith.in', '$2y$10$p9hl/NUNL7WTExKoI34aqOfd5Rgv2hUinHSCfolpjjZof.QZOrisu', 10000, 'Seed account for integration checks'),
+  ('tejas', 'tejas@iith.in', '$2y$10$miUlmBgo7bFZgnj3Ph22w.AmhEAyIcb.Cw.YcVBlZapBIuUJ0YQd6', 10000, 'Seed account for integration checks'),
+  ('divyansh', 'divyansh@iith.in', '$2y$10$ff/5fhtDPygb5U2PhsEGy.FXxct6vPUPi4yJLE3NOxNvSB2tKGqVa', 10000, 'Seed account for integration checks'),
+  ('harshavardhan', 'harshavardhan@iith.in', '$2y$10$lLQeJjGDNBfCE/AsDEwFPetpWRt6Ot2bJYE18Bd1LhFMi/ro9EvCe', 10000, 'Seed account for integration checks'),
+  ('vrishin', 'vrishin@iith.in', '$2y$10$DoJz/154CEIrIsElX12TcuN7i/tMlfL5XSSO0ag5sjLlFE8RnS6/6', 10000, 'Seed account for integration checks'),
+  ('trudy', 'trudy@iith.in', '$2y$10$3l/mqAXHfk6lahCx6Kwq5.lj/DD6mIrOQmVQOpy9RXS8ax90dEOzy', 10000, 'Seed account for integration checks')
 ON DUPLICATE KEY UPDATE
   email = VALUES(email),
   password_hash = VALUES(password_hash),
@@ -148,7 +148,7 @@ SQL
 
 seeded_count="$(mysql --protocol=tcp --connect-timeout=2 -N -s \
   -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" "$MYSQL_DATABASE" \
-  -e "SELECT COUNT(*) FROM users WHERE username IN ('test_alice','test_bob','test_carol','test_dave','test_erin','test_frank');")"
+  -e "SELECT COUNT(*) FROM users WHERE username IN ('nishanth','tejas','divyansh','harshavardhan','vrishin','trudy');")"
 seeded_count="$(printf "%s" "$seeded_count" | tr -d '[:space:]')"
 
 if [ "$seeded_count" -lt 6 ]; then
