@@ -22,36 +22,40 @@ $target_username = clean_input($_GET['username'] ?? '');
 $sql = "";
 $bind_val = "";
 
+// 🆕 RED TEAM FIX (E4): Database-Level Privacy Gate. 
+// We only select the balance if the row's ID matches the viewer's ID. Otherwise, it returns NULL.
+$base_select = "SELECT id, public_id, username, bio, profile_image_path, 
+                CASE WHEN id = :viewer_id THEN balance_paise ELSE NULL END as balance_paise 
+                FROM users ";
+
 if ($target_uuid) {
     // Search by UUID
-    $sql = "SELECT id, public_id, username, bio, profile_image_path, balance_paise FROM users WHERE public_id = :val LIMIT 1";
+    $sql = $base_select . "WHERE public_id = :val LIMIT 1";
     $bind_val = $target_uuid;
 } elseif ($target_username) {
     // Search by Username
-    $sql = "SELECT id, public_id, username, bio, profile_image_path, balance_paise FROM users WHERE username = :val LIMIT 1";
+    $sql = $base_select . "WHERE username = :val LIMIT 1";
     $bind_val = $target_username;
 } else {
     // Default to Self
-    $sql = "SELECT id, public_id, username, bio, profile_image_path, balance_paise FROM users WHERE id = :val LIMIT 1";
+    $sql = $base_select . "WHERE id = :val LIMIT 1";
     $bind_val = $viewer_internal_id;
 }
 
 // 4. SECURE EXECUTION
 try {
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([':val' => $bind_val]);
+    // 🆕 RED TEAM FIX (E4): We now pass the viewer's ID to the query so MySQL can check ownership
+    $stmt->execute([
+        ':val' => $bind_val,
+        ':viewer_id' => $viewer_internal_id
+    ]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     // 🆕 UPGRADED: Log the system failure via the framework before dying
     error_log("Profile View DB Error: " . $e->getMessage());
     logSecurityEvent(LOG_SUSPICIOUS, "Database error on profile view"); 
     die("A system error occurred. Our engineers have been notified.");
-}
-
-if (!$user) { 
-    // 🆕 UPGRADED: Log people probing for fake IDs
-    logSecurityEvent(LOG_INVALID_INPUT, "Attempted to view missing profile: " . escape_output($bind_val));
-    die("Agent not found or does not exist."); 
 }
 
 // 5. IRONCLAD DATA PACKAGING
