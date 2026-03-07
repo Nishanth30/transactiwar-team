@@ -230,12 +230,14 @@ function sanitize_int(mixed $value): ?int
     }
 
     // Check it fits in PHP int range
-    if (!filter_var($str, FILTER_VALIDATE_INT, [
+    if (
+    !filter_var($str, FILTER_VALIDATE_INT, [
     'options' => [
     'min_range' => PHP_INT_MIN,
     'max_range' => PHP_INT_MAX,
     ]
-    ])) {
+    ])
+    ) {
         return null;
     }
 
@@ -300,10 +302,12 @@ function sanitize_public_user_id(mixed $value): ?string
         return null;
     }
 
-    if (!preg_match(
+    if (
+    !preg_match(
     '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',
     $str
-    )) {
+    )
+    ) {
         return null;
     }
 
@@ -330,15 +334,19 @@ function sanitize_public_user_id(mixed $value): ?string
  */
 function validate_username(string $username): bool
 {
-    if (strlen($username) < MIN_USERNAME_LEN ||
-    strlen($username) > MAX_USERNAME_LEN) {
+    if (
+    strlen($username) < MIN_USERNAME_LEN ||
+    strlen($username) > MAX_USERNAME_LEN
+    ) {
         return false;
     }
 
     // Only alphanumeric, underscore, hyphen
     // Cannot start or end with underscore or hyphen
-    if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9-_]*[a-zA-Z0-9]$/', $username) &&
-    !preg_match('/^[a-zA-Z0-9]$/', $username)) {
+    if (
+    !preg_match('/^[a-zA-Z0-9][a-zA-Z0-9-_]*[a-zA-Z0-9]$/', $username) &&
+    !preg_match('/^[a-zA-Z0-9]$/', $username)
+    ) {
         return false;
     }
 
@@ -463,11 +471,6 @@ function sanitize_bio(string $bio): string
     // Remove null bytes
     $bio = str_replace("\0", '', $bio);
 
-    // Attacker's 65,000-char payload gets cut to 65,535 chars max
-    // But strip_tags on even 65k of <a<a<a is dangerous
-    // So truncate to a safe working limit BEFORE parsing
-    $bio = mb_substr($bio, 0, MAX_BIO_LEN, 'UTF-8');
-
     // Strip ALL html tags — no markup in biography
     $bio = strip_tags($bio);
 
@@ -501,7 +504,7 @@ function sanitize_comment(string $comment): string
 {
     // Remove null bytes
     $comment = str_replace("\0", '', $comment);
-    $comment = mb_substr($comment, 0, MAX_COMMENT_LEN, 'UTF-8');
+
     // Strip HTML tags
     $comment = strip_tags($comment);
 
@@ -703,8 +706,13 @@ function get_client_ip(): string
 
     // Validate each candidate — return first valid IP
     foreach ($candidates as $ip) {
-        if (filter_var($ip, FILTER_VALIDATE_IP,
-        FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+        if (
+        filter_var(
+        $ip,
+        FILTER_VALIDATE_IP,
+        FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6
+        )
+        ) {
             return $ip;
         }
     }
@@ -723,8 +731,13 @@ function sanitize_ip(string $ip): string
 {
     $ip = trim($ip);
 
-    if (filter_var($ip, FILTER_VALIDATE_IP,
-    FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+    if (
+    filter_var(
+    $ip,
+    FILTER_VALIDATE_IP,
+    FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6
+    )
+    ) {
         return $ip;
     }
 
@@ -812,10 +825,12 @@ function sanitize_uuid(mixed $value): ?string
     $str = str_replace("\0", '', $str);
 
     // Validate UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    if (!preg_match(
+    if (
+    !preg_match(
     '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/',
     $str
-    )) {
+    )
+    ) {
         return null;
     }
 

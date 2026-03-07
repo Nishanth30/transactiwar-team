@@ -58,6 +58,12 @@ try {
     die("A system error occurred. Our engineers have been notified.");
 }
 
+// 🆕 RED TEAM FIX (V1): Stop execution and log the probe if the profile doesn't exist
+if (!$user) {
+    logSecurityEvent(LOG_INVALID_INPUT, "Profile probe: " . substr((string)$bind_val, 0, 64));
+    http_response_code(404);
+    die("Agent not found or does not exist.");
+}
 // 5. IRONCLAD DATA PACKAGING
 // We prep the data so the UI dev literally cannot cause an XSS attack.
 $profileData = [

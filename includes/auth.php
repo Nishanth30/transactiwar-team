@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 declare(strict_types=1);
 
 require_once __DIR__ . '/sanitize.php';
@@ -9,18 +9,18 @@ require_once __DIR__ . '/../config/session.php';
 | Security constants
 |--------------------------------------------------------------------------
 */
-const LOGIN_DELAY_MIN_US  = 250000; // 0.25s
-const LOGIN_DELAY_MAX_US  = 400000; // 0.40s
-const MAX_LOGIN_ATTEMPTS  = 5;
-const LOCKOUT_SECONDS     = 300;    // 5 minute lockout
-const ATTEMPT_WINDOW      = 900;    // reset attempt count after 15 min of inactivity
+const LOGIN_DELAY_MIN_US = 250000; // 0.25s
+const LOGIN_DELAY_MAX_US = 400000; // 0.40s
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_SECONDS = 300;    // 5 minute lockout
+const ATTEMPT_WINDOW = 900;    // reset attempt count after 15 min of inactivity
 
 /*
  * Real bcrypt hash used when user is missing.
  * Prevents timing-based user enumeration.
  *
  * IMPORTANT: Regenerate with password_hash('dummy', PASSWORD_DEFAULT)
- * and replace — never reuse a hash from the internet.
+ * and replace - never reuse a hash from the internet.
  */
 const DUMMY_HASH =
     '$2y$12$KIXsvMrxRbLQn5oTMHuSPOY/hGKPSfLpFBG7GiKVcI5Fg2NeRRdYu';
@@ -33,8 +33,19 @@ const DUMMY_HASH =
 */
 function ensure_session_started(): void
 {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        return;
+    }
+
+    $sessionConfig = __DIR__ . '/../config/session.php';
+    if (!file_exists($sessionConfig)) {
+        throw new RuntimeException('session.php not found — cannot start session');
+    }
+
+    require_once $sessionConfig;
+
     if (session_status() !== PHP_SESSION_ACTIVE) {
-        require_once __DIR__ . '/session.php';
+        throw new RuntimeException('Session failed to start');
     }
 }
 
@@ -42,12 +53,12 @@ function ensure_session_started(): void
 /*
 |--------------------------------------------------------------------------
 | IP-based rate limiting (DB-backed)
-| Keyed by IP — clearing cookies does NOT reset this.
+| Keyed by IP - clearing cookies does NOT reset this.
 |--------------------------------------------------------------------------
 */
 function is_ip_locked(PDO $pdo, string $ip): bool
 {
-    $now  = time();
+    $now = time();
     $stmt = $pdo->prepare("
         SELECT attempts, locked_until, last_attempt
         FROM login_attempts
@@ -89,12 +100,12 @@ function record_failed_attempt(PDO $pdo, string $ip): void
                            ),
             last_attempt = :now
     ")->execute([
-        'ip'      => $ip,
-        'now'     => $now,
-        'window'  => $now - ATTEMPT_WINDOW,
-        'max'     => MAX_LOGIN_ATTEMPTS,
-        'lockout' => LOCKOUT_SECONDS,
-    ]);
+                'ip' => $ip,
+                'now' => $now,
+                'window' => $now - ATTEMPT_WINDOW,
+                'max' => MAX_LOGIN_ATTEMPTS,
+                'lockout' => LOCKOUT_SECONDS,
+            ]);
 }
 
 function clear_failed_attempts(PDO $pdo, string $ip): void
@@ -106,7 +117,7 @@ function clear_failed_attempts(PDO $pdo, string $ip): void
 
 function get_lockout_remaining(PDO $pdo, string $ip): int
 {
-    $now  = time();
+    $now = time();
     $stmt = $pdo->prepare("
         SELECT locked_until FROM login_attempts WHERE ip = :ip
     ");
@@ -134,10 +145,18 @@ function get_lockout_remaining(PDO $pdo, string $ip): int
 | avoiding the TOCTOU race condition of a pre-check SELECT.
 |--------------------------------------------------------------------------
 */
+function generate_uuid_v4(): string
+{
+    $data = random_bytes(16);
+    $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+    $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+}
+
 function register_user(PDO $pdo, string $username, string $email, string $password): bool|string
 {
     $username = trim($username);
-    $email    = normalize_email($email);
+    $email = normalize_email($email);
 
     if ($username === '' || $email === '' || $password === '') {
         return false;
@@ -145,7 +164,7 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
 
     if (
         !validate_username($username) ||
-        !validate_email($email)       ||
+        !validate_email($email) ||
         !validate_password($password)
     ) {
         return false;
@@ -155,12 +174,13 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
 
     try {
         $stmt = $pdo->prepare("
-            INSERT INTO users (username, email, password_hash)
-            VALUES (:username, :email, :password_hash)
+            INSERT INTO users (public_id, username, email, password_hash)
+            VALUES (:public_id, :username, :email, :password_hash)
         ");
         $stmt->execute([
-            'username'      => $username,
-            'email'         => $email,
+            'public_id' => generate_uuid_v4(),
+            'username' => $username,
+            'email' => $email,
             'password_hash' => $hash
         ]);
         //Adding this
@@ -208,15 +228,15 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
 {
     ensure_session_started();
 
-    $ip = sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    $ip = function_exists('get_client_ip')
+        ? get_client_ip()
+        : sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
 
     // Check IP lockout before doing any work
     if (is_ip_locked($pdo, $ip)) {
-        // Adding this- when IP is locked
-        /* if (function_exists('logActivity')) {
+        if (function_exists('logActivity')) {
             logActivity(LOG_LOGIN_LOCKED);
         }
-        */
         usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
         return 'locked';
     }
@@ -224,7 +244,7 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     $identifier = trim($identifier);
 
     /*
-     * Split query to avoid username/email ambiguity —
+     * Split query to avoid username/email ambiguity -
      * prevents edge cases where a username looks like an email.
      */
     if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
@@ -253,9 +273,9 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
      * preventing timing-based user enumeration.
      */
     $hashToCheck = $user['password_hash'] ?? DUMMY_HASH;
-    $valid       = password_verify($password, $hashToCheck);
+    $valid = password_verify($password, $hashToCheck);
 
-    // Random delay — slows brute force and hides timing differences
+    // Random delay - slows brute force and hides timing differences
     usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
 
     if (!$user || !$valid) {
@@ -269,15 +289,15 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
         return false;
     }
 
-    // Successful login — clear rate limit record for this IP
+    // Successful login - clear rate limit record for this IP
     clear_failed_attempts($pdo, $ip);
 
     /* Prevent session fixation */
     session_regenerate_id(true);
 
-    $_SESSION['user_id']        = (int)$user['id'];
-    $_SESSION['public_user_id'] = (string)$user['public_id'];
-    $_SESSION['username']       = $user['username'];
+    $_SESSION['user_id'] = (int) $user['id'];
+    $_SESSION['public_user_id'] = (string) $user['public_id'];
+    $_SESSION['username'] = $user['username'];
 
     /*
      * Bind session to client IP.
@@ -301,11 +321,6 @@ function require_login(): void
 {
     ensure_session_started();
 
-    /* if (!isset($_SESSION['user_id'])) {
-        header('Location: /login.php');
-        exit;
-    }
-    */
 
     if (!isset($_SESSION['user_id'])) {
         if (function_exists('logActivity')) {
@@ -317,13 +332,15 @@ function require_login(): void
 
     /*
      * Session IP binding check.
-     * Kills the session if the IP has changed — prevents cookie hijacking.
+     * Kills the session if the IP has changed - prevents cookie hijacking.
      */
-    $ip = sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    $ip = function_exists('get_client_ip')
+        ? get_client_ip()
+        : sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
 
     if (($_SESSION['ip'] ?? '') !== $ip) {
-         // ADD THIS - on IP mismatch (Change 6)
-        if (function_exists('logActivity')) {
+        // ADD THIS - on IP mismatch (Change 6)
+        if (function_exists('logSecurityEvent')) {
             logSecurityEvent(LOG_SESSION_HIJACK, 'IP mismatch in require_login');
         }
         session_unset();
@@ -361,7 +378,7 @@ function resolve_user_id_from_public_id(PDO $pdo, string $publicId): ?int
         return null;
     }
 
-    return (int)$row['id'];
+    return (int) $row['id'];
 }
 
 function get_user_by_public_id(PDO $pdo, string $publicId): ?array
@@ -373,7 +390,7 @@ function get_user_by_public_id(PDO $pdo, string $publicId): ?array
     }
 
     $stmt = $pdo->prepare("
-        SELECT id, public_id, username, email, balance_paise, bio, profile_image_path
+        SELECT id, public_id, username, bio, profile_image_path
         FROM users
         WHERE public_id = :public_id
         LIMIT 1
@@ -382,6 +399,16 @@ function get_user_by_public_id(PDO $pdo, string $publicId): ?array
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     return $row ?: null;
+}
+
+function get_own_profile(PDO $pdo, int $userId): ?array
+{
+    $stmt = $pdo->prepare("
+        SELECT id, public_id, username, email, balance_paise, bio, profile_image_path
+        FROM users WHERE id = :id LIMIT 1
+    ");
+    $stmt->execute(['id' => $userId]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
 
@@ -396,6 +423,7 @@ function logout_user(): void
         logActivity(LOG_LOGOUT);
     }
 
+    session_regenerate_id(true);
     // Wipe session data
     $_SESSION = [];
 
@@ -403,15 +431,22 @@ function logout_user(): void
     if (ini_get('session.use_cookies')) {
         $params = session_get_cookie_params();
         setcookie(
-            session_name(), '',
-            time() - 42000,
-            $params['path'],
-            $params['domain'],
-            $params['secure'],
-            $params['httponly']
+            session_name(),
+            '',
+            [
+                'expires' => time() - 42000,
+                'path' => $params['path'],
+                'domain' => $params['domain'],
+                'secure' => $params['secure'],
+                'httponly' => $params['httponly'],
+                'samesite' => $params['samesite'] ?? 'Lax',
+            ]
         );
     }
 
     // Destroy server side session
     session_destroy();
 }
+
+
+

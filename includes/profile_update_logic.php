@@ -63,9 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 🆕 RED TEAM FIX (C3): The Decompression Bomb Check
                 // Read the image dimensions BEFORE loading it into RAM
                 $image_info = @getimagesize($file['tmp_name']);
-                if ($image_info === false || $image_info[0] > 4000 || $image_info[1] > 4000) {
-                    $error_message = "Image dimensions too large. Max 4000x4000 pixels.";
-                    logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "Decompression bomb prevented");
+                if ($image_info === false || $image_info[0] > 1200 || $image_info[1] > 1200) {
+                    $error_message = "Image dimensions too large. Max 1200x1200 pixels.";
+                    logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "image exceeded safe dimensions");
                 } else {
                     $safe_filename = sanitize_filename($file['name']);
                     $final_filename = 'avatar_' . bin2hex(random_bytes(16)) . '_' . $safe_filename;
