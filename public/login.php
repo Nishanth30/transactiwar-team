@@ -22,45 +22,37 @@ if (isset($_SESSION['user_id'])) {
 /* Handle login submit */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    if (isIpBruteForcing()) {
-        logActivity(LOG_BRUTE_FORCE);
-        $error = 'Too many attempts. Please try again later.';
+    verifyCsrf();
+
+    $usernameOrEmail = post_str('identifier');
+    $password = $_POST['password'] ?? '';
+
+    if ($usernameOrEmail === '' || $password === '') {
+        $error = 'All fields are required.';
+        logActivity(LOG_INVALID_INPUT);
+
+    } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
+        $error = 'Invalid credentials.';
+        logActivity(LOG_INVALID_INPUT);
 
     } else {
+        try {
+            $success = login_user($pdo, $usernameOrEmail, $password);
 
-        verifyCsrf();
-
-        $usernameOrEmail = post_str('identifier');
-        $password = $_POST['password'] ?? '';
-
-        if ($usernameOrEmail === '' || $password === '') {
-            $error = 'All fields are required.';
-            logActivity(LOG_INVALID_INPUT);
-
-        } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
-            $error = 'Invalid credentials.';
-            logActivity(LOG_INVALID_INPUT);
-
-        } else {
-            try {
-                $success = login_user($pdo, $usernameOrEmail, $password);
-
-                if ($success) {
-                    clearLoginAttempts(get_client_ip());
-                    logActivity(LOG_LOGIN_SUCCESS);
-                    header('Location: /index.php');
-                    exit;
-                } else {
-                    $error = 'Invalid credentials.';
-                    recordFailedLogin(get_client_ip());
-                    logActivity(LOG_LOGIN_FAIL);
-                }
-
-            } catch (Throwable $e) {
-                error_log($e->getMessage());
-                $error = 'Login failed.';
-                logActivity(LOG_INVALID_INPUT);
+            if ($success === true) {
+                header('Location: /index.php');
+                exit;
+            } elseif ($success === 'locked') {
+                // Hard lock only triggers at 20 attempts (30 min timeout)
+                $error = 'Account temporarily locked. Please try again later.';
+            } else {
+                $error = 'Invalid credentials.';
             }
+
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $error = 'Login failed.';
+            logActivity(LOG_INVALID_INPUT);
         }
     }
 }

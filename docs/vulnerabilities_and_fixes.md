@@ -1256,6 +1256,87 @@ Errors are still logged to the server's error log (visible in `docker logs app`)
 
 ---
 
+### V7 — Timing Oracle Allows Attacker to Detect Correct Password Without Session Access
+
+**Severity:** 🟠 High  
+**Attack class:** Timing Side-Channel / Brute Force Optimisation  
+**Status:** ✅ Fixed  
+**File:** `includes/auth.php`
+
+#### What Was Wrong
+
+The exponential backoff delay was originally designed to be applied **only on failure**, after `password_verify()` returned false:
+
+```php
+// ❌ Before — delay only after a failed check
+$valid = password_verify($password, $hashToCheck);
+
+if (!$user || !$valid) {
+    record_failed_attempt($pdo, $ip);
+    return false;    // slow return
+}
+
+// Correct password — no extra delay
+clear_failed_attempts($pdo, $ip);
+return true;         // fast return
+```
+
+#### The Vulnerability
+
+When an attacker is running a scripted brute force after several failures, their IP has a backoff delay of e.g. 16 seconds. This delay only fires on the failure path. A correct guess skips the delay entirely.
+
+**Step-by-step timing oracle attack:**
+
+```
+Setup: Attacker has failed 4 times → backoff delay = 16s
+
+Attempt 5 (wrong password)  → server sleeps 16s → response after 16.3s → WRONG
+Attempt 6 (wrong password)  → server sleeps 30s → response after 30.3s → WRONG (cap)
+Attempt 7 (correct password)→ no sleep          → response after  0.3s → ← FOUND IT
+
+The attacker detects the correct password by observing sub-second response time.
+They don't even need to see the redirect — the timing alone reveals success.
+This means the backoff mechanism is defeated: it slows down the search but
+correctly guessing the password is instantly detectable, allowing the attacker
+to stop and use the credential without completing the full lockout.
+```
+
+The correct password is leaked acoustically through the response time — without the attacker needing any session cookie, redirect, or response body inspection.
+
+#### How the Fix Prevents It
+
+```php
+// ✅ After — delay applied BEFORE password_verify(), regardless of outcome
+$backoffSeconds = get_backoff_delay($pdo, $ip);
+if ($backoffSeconds > 0) {
+    sleep($backoffSeconds);   // fires for EVERY attempt — correct or not
+}
+
+$valid = password_verify($password, $hashToCheck);
+
+if (!$user || !$valid) {
+    record_failed_attempt($pdo, $ip);
+    return false;    // slow return
+}
+
+clear_failed_attempts($pdo, $ip);
+return true;         // also slow return — same timing as failure
+```
+
+Now every attempt from a penalised IP takes `backoff + bcrypt_time`, regardless of outcome:
+
+```
+Attempt 5 (wrong)   → sleep 16s → password_verify → 16.3s response
+Attempt 6 (wrong)   → sleep 30s → password_verify → 30.3s response
+Attempt 7 (correct) → sleep 30s → password_verify → 30.3s response ← indistinguishable
+```
+
+The attacker cannot distinguish a hit from a miss by timing. They must observe the HTTP response body or redirect — which requires actually holding a valid session, providing no advantage over stopping the attack.
+
+**Cost to legitimate users:** A user who mistyped once then logs in correctly waits 2 extra seconds. `clear_failed_attempts()` then deletes the record, so all future logins are instant again.
+
+---
+
 ## Summary Table
 
 | Fix | Severity | File(s) | Attack Prevented |
@@ -1276,3 +1357,4 @@ Errors are still logged to the server's error log (visible in `docker logs app`)
 | C2.2 | 🔴 Critical | `process_payment.php` | Deadlock injection denies service to payment system |
 | V1 | 🔴 Critical | `logout.php` | Stolen cookie survives logout — session ID not rotated |
 | V6 | 🟠 High | `login.php` | PHP error traces leaked to browser enabling recon |
+| V7 | 🟠 High | `auth.php` | Timing oracle reveals correct password via response time |
