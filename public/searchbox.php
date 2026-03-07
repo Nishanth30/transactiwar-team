@@ -32,7 +32,7 @@ include("header.html");
 <h2>Search Users</h2>
 
 <form method="GET" action="">
-    <?= csrfField(); ?>
+    <!-- No CSRF token on GET forms — tokens in URLs leak via logs/history/Referer -->
     <input type="text" name="q" id="searchbar" placeholder="Search users...">
     <button type="submit">Search</button>
 </form>
