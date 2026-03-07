@@ -603,11 +603,12 @@ The call to `resetSession()` is gone. The mismatch handler now executes three op
 
 **Severity:** 🔴 Critical  
 **File affected:** `config/session.php`  
-**Attack class:** Session Hijacking via Fingerprint Forgery
+**Attack class:** Session Hijacking via Fingerprint Forgery  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
-The session fingerprint was computed purely from client-visible information:
+The session fingerprint was computed purely from two values that any attacker on the same network already knows:
 
 ```php
 // ❌ Before
@@ -617,41 +618,89 @@ $currentFingerprint = hash('sha256',
 );
 ```
 
+There is no secret. Anyone who knows the two inputs can precompute the expected fingerprint and pass the check with a stolen cookie.
+
 #### The Vulnerability
 
-Both inputs (`User-Agent` and `REMOTE_ADDR`) are fully known to any attacker on the same network — or even from outside it:
+**What the fingerprint is supposed to do:**  
+After a session is created, the fingerprint is stored in `$_SESSION['fingerprint']`. On every subsequent request, the server recomputes it and compares. If they don't match, the session is destroyed — this is meant to detect a stolen cookie being used from a different machine.
 
-- **User-Agent** is sent by the browser in every request and is trivially readable or spoofable.
-- **REMOTE_ADDR** behind a NAT (university network, office LAN, coffee shop) is the **same for every device** on that network.
+**Why it fails completely on a shared network:**
 
-An attacker on the same network as a victim can:
-1. Steal the victim's session cookie (via XSS, packet sniff on HTTP, or ARP poisoning).
-2. Note that both their device and the victim's device have the same `REMOTE_ADDR`.
-3. Copy the victim's `User-Agent` string (visible in the stolen cookie request, or guessable from the browser).
-4. Compute the fingerprint themselves: `sha256(UA + IP)` — it matches exactly.
-5. Send requests with the stolen cookie — the fingerprint check passes, the session continues.
+In a war-game setting (or any LAN/office/university network), all devices behind the same router share one public `REMOTE_ADDR` — the NAT IP. So `REMOTE_ADDR` is identical for every device on the network.
 
-The fingerprint provides **zero additional protection** on any shared network.
+`User-Agent` is equally trivial to obtain or control:
+- It is sent in plaintext in every HTTP request — anyone sniffing traffic reads it immediately
+- On HTTPS with a MITM setup, the attacker has already decrypted the traffic to get the cookie, so the UA is right there in the same request
+- UA is spoofable in any HTTP client: `curl -H "User-Agent: <victim's UA>"`
+
+**Step-by-step attack without the fix:**
+
+```
+Step 1 — Cookie theft
+  Attacker on same LAN runs Wireshark on HTTP traffic (or ARP+MITM for HTTPS).
+  They capture a victim request and extract:
+    - Session cookie: PHPSESSID=abc123xyz
+    - User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121...
+    - Source IP: 192.168.1.1  (the NAT IP — attacker's machine has the SAME one)
+
+Step 2 — Fingerprint verification  
+  Attacker's machine shares REMOTE_ADDR 192.168.1.1 with victim.
+  Attacker sets User-Agent to match: Mozilla/5.0 (Windows NT 10.0...) Chrome/121...
+  Attacker computes: sha256(UA + IP) → identical hash to victim's stored fingerprint.
+
+Step 3 — Session replay
+  Attacker sends: Cookie: PHPSESSID=abc123xyz  with matching UA.
+  Server recomputes fingerprint → matches $_SESSION['fingerprint'] exactly.
+  Fingerprint check passes.
+  Attacker is now acting as the victim — full account access.
+
+Step 4 — Duration
+  Attack persists until the victim logs out or the session times out (30-60 min).
+  Attacker can read balance, send transfers, drain the account.
+```
+
+**No crypto needed. No brute force. A single captured request enables full session takeover.**
+
+The fingerprint was providing a false sense of security — it appeared to be a defence against cookie theft, but on any shared network it added zero protection.
 
 #### How the Fix Prevents It
 
-A server-side secret is injected into the hash, making the fingerprint uncomputable by any external party even if they know the UA and IP:
+A server-side secret is prepended to the hash before computing it:
 
 ```php
-// ✅ After
-$secret = $_ENV['SESSION_SECRET'] ?? 'fallback-change-in-production';
-$currentFingerprint = hash('sha256',
-    $secret .
+// ✅ After — FIX: C1.3
+$_fingerprintSecret = $_ENV['SESSION_SECRET'] ?? 'fallback-change-in-production';
+
+$currentFingerprint = hash(
+    'sha256',
+    $_fingerprintSecret .
     ($_SERVER['HTTP_USER_AGENT'] ?? '') .
     $_SERVER['REMOTE_ADDR']
 );
 ```
 
-`SESSION_SECRET` is a long random string stored in the server's `.env` file — never transmitted to clients, never in the codebase. Even if an attacker knows the UA and IP, they cannot compute the fingerprint without the secret. A stolen session cookie used from a different connection (different secret-derived fingerprint) is immediately invalidated.
+`SESSION_SECRET` is a long random string stored server-side in `.env`. The attacker now needs to compute:
 
-> ⚠️ `SESSION_SECRET` must be set in `.env` as a minimum 32-character random string. Rotate it during incident response to invalidate all active sessions across the platform simultaneously.
+```
+sha256(SECRET + UA + IP)
+```
+
+They know `UA` and `IP`. They do not know `SECRET`. Without it, SHA-256 is a one-way function — preimage attacks are computationally infeasible at any reasonable key length. The attacker cannot reproduce the fingerprint even with a captured cookie, matching UA, and matching IP.
+
+**Replay attack result after fix:**  
+Attacker sends stolen cookie with matching UA and matching IP → server recomputes fingerprint with the secret → hash does not match → `SESSION_HIJACK_DETECTED` is logged → session is destroyed → attacker gets redirected to `/login.php` with nothing.
+
+#### Bonus: Incident Response Rotation
+
+Because `SESSION_SECRET` is a server-side variable, rotating it (changing the value in `.env` and restarting the app) **immediately invalidates every active session on the platform**. If a session compromise is detected during the war game, rotating `SESSION_SECRET` is a single-command response that logs out all users — legitimate and attacker — simultaneously, forcing everyone to re-authenticate.
+
+> ⚠️ `SESSION_SECRET` **must** be set in `.env` as a minimum 32-character random string. Generate one with:  
+> `php -r "echo bin2hex(random_bytes(32)) . PHP_EOL;"`  
+> Never hardcode it, never commit it to git, never reuse it across environments.
 
 ---
+
 
 ### C2.1 — Integer Overflow on Balance Check Allows Transfers With Insufficient Funds
 

@@ -56,8 +56,14 @@ $regenInterval = 300;    // rotate ID every 5 minutes
 // Session fingerprint check — UA + IP binding
 // FIX: C1.2 — mismatch now does hard destroy+redirect instead of resetSession()
 //             to avoid referencing uninitialised session metadata mid-stream
+// FIX: C1.3 — server secret makes fingerprint uncomputable by external parties
+// even if they know the victim's User-Agent and IP (e.g. shared NAT / LAN)
+// SESSION_SECRET must be set in .env as a long random string (min 32 chars)
+$_fingerprintSecret = $_ENV['SESSION_SECRET'] ?? 'fallback-change-in-production';
+
 $currentFingerprint = hash(
     'sha256',
+    $_fingerprintSecret .
     ($_SERVER['HTTP_USER_AGENT'] ?? '') .
     $_SERVER['REMOTE_ADDR']
 );
