@@ -1143,6 +1143,108 @@ If Transfer A→B locks ids 10 then 20, Transfer B→A now *also* locks ids 10 t
 
 ---
 
+### V1 — `logout.php` Bypasses `logout_user()`; Stolen Cookies Survive Logout
+
+**Severity:** 🔴 Critical  
+**Attack class:** Post-Logout Session Persistence / Cookie Replay  
+**Status:** ✅ Fixed  
+**File:** `public/logout.php`
+
+#### What Was Wrong
+
+`logout.php` performed session teardown manually, without importing or calling `auth.php`'s `logout_user()` function:
+
+```php
+// ❌ Before — logout.php (no auth.php import)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
+    session_unset();
+    session_destroy();
+    header('Location: /login.php');
+    exit;
+}
+```
+
+All the security work done in `logout_user()` (session ID rotation, cookie deletion, logging) was completely bypassed.
+
+#### The Vulnerability
+
+`session_destroy()` marks the session data for deletion, but the **session ID itself is never invalidated**. The browser still holds the exact same cookie it had before logout. Additionally, `session_unset()` + `session_destroy()` does not send a `Set-Cookie` header to expire or remove the cookie from the browser — the cookie simply stays in memory on the client until the browser tab is closed.
+
+**Step-by-step attack:**
+
+```
+Step 1 — Attacker steals the victim's session cookie
+  Method: XSS injection to exfiltrate document.cookie, packet sniff on HTTP,
+          or a momentary glimpse at the victim's browser DevTools.
+  Attacker now holds: PHPSESSID=abc123xyz...
+
+Step 2 — Victim notices something suspicious and logs out
+  Victim clicks "Logout" → POST /logout.php
+  Server calls session_unset() + session_destroy()
+  Victim is redirected to /login.php and believes they are safe.
+
+Step 3 — Victim logs in again, creating a NEW session
+  New session: PHPSESSID=def456uvw...
+  The victim is satisfied — they consider the threat neutralised.
+
+Step 4 — Attacker replays the OLD stolen cookie
+  Attacker sends:  Cookie: PHPSESSID=abc123xyz...
+  Because the OLD session file was never explicitly overwritten or its ID
+  invalidated via session_regenerate_id(true), and PHP's garbage collector
+  has not yet cleaned it up (1% probability per request by default), the
+  server may still accept the old session.
+  Result: Attacker is authenticated as the victim.
+
+Step 5 — Attacker initiates a transfer
+  POST /includes/process_payment.php with the stolen session
+  The victim's balance is drained. The victim has no idea because they
+  logged out believing they were safe.
+```
+
+The core flaw: `session_destroy()` alone does **not** prevent an attacker who already holds a valid session ID from replaying it. Only `session_regenerate_id(true)` — which issues a brand new session ID and immediately deletes the old one from the server — closes this window.
+
+#### How the Fix Prevents It
+
+```php
+// ✅ After — logout.php now delegates entirely to logout_user()
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../config/db.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
+    logout_user();  // one call covers everything
+    header('Location: /login.php');
+    exit;
+}
+```
+
+`logout_user()` in `auth.php` does the following in sequence:
+
+```php
+// Inside logout_user():
+logActivity(LOG_LOGOUT);           // 1. Log before destroying session data
+
+session_regenerate_id(true);       // 2. Issue new ID, DELETE old session file immediately
+                                   //    The stolen cookie PHPSESSID=abc123xyz is now dead
+                                   //    server-side — the file is gone.
+
+$_SESSION = [];                    // 3. Wipe all session variables from memory
+
+setcookie(session_name(), '', [    // 4. Send Set-Cookie header with past expiry
+    'expires'  => time() - 42000, //    Forces browser to delete the cookie
+    'samesite' => 'Lax',          //    Correct SameSite attribute preserved
+    ...
+]);
+
+session_destroy();                 // 5. Final cleanup of the new (empty) session
+```
+
+After this, even if the attacker replays `PHPSESSID=abc123xyz`, the server has no record of that ID. The session file was deleted in step 2. The request is treated as an unauthenticated guest.
+
+---
+
 ## Summary Table
 
 | Fix | Severity | File(s) | Attack Prevented |
