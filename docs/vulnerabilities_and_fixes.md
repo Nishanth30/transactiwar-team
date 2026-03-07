@@ -480,60 +480,122 @@ If the request does not arrive from a trusted proxy, `REMOTE_ADDR` is used as th
 
 **Severity:** 🔴 Critical  
 **File affected:** `config/session.php`  
-**Attack class:** Forced Logout / Denial of Service via Error Trigger
+**Attack class:** Forced Logout / Denial of Service via Error Trigger  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
-In `session.php`, the session fingerprint check runs at line 59–65 and can call `resetSession($now)` on a mismatch. But `$now = time()` is not defined until line 73:
+In `session.php`, the fingerprint mismatch handler called `resetSession($now)` — but `$now = time()` was not defined until *after* the fingerprint check block. Additionally, `resetSession()` internally called `session_destroy()` followed by a second `session_start()`, which means on any fingerprint mismatch the session was destroyed and reconstructed with no guarantee the new session inherited the correct secure cookie parameters.
 
 ```php
 // ❌ Before — execution order
-$currentFingerprint = hash('sha256', $ua . $ip);   // line 51
+$currentFingerprint = hash('sha256', $ua . $ip); // line 51
 if (!hash_equals($_SESSION['fingerprint'], $fp)) {
-    resetSession(time());                            // line 64 — uses time() directly
+    resetSession(time());   // line 64 — $now not yet defined; side-effect chain
 }
 // ...
-$now = time();                                       // line 73 — too late for above
-// ...
-if (($now - $_SESSION['last_activity']) > $inactivityTimeout) {
-    resetSession($now);                              // line 152 — uses $now, safe
-}
+$now = time();  // line 73 — defined too late
 ```
 
-The immediate crash risk is subtler: `resetSession()` reinitialises `$_SESSION['created_at']`, `$_SESSION['last_activity']`, and `$_SESSION['last_regen']`. But the code that *reads* those variables to make timeout decisions (lines 147–162) runs after `$now` is defined. However if `resetSession()` is triggered at line 64 and it calls `logActivity()` which internally touches `$_SESSION` values that haven't been set yet — the logger can crash or log incorrect data.
+The `resetSession()` function itself also lacked atomicity — it destroyed the session, deleted the cookie, set new cookie params, and started a fresh session. Any failure in that chain (headers already sent, file lock, etc.) left the session in an indeterminate state.
 
 #### The Vulnerability
 
-Any attacker (or even a legitimate user switching browsers) who sends a request with a different User-Agent string triggers the fingerprint mismatch at line 59. This:
+There are three realistic attack vectors, each with important nuance.
 
-1. Calls `resetSession()` which calls `session_destroy()` and `session_start()` — wiping the active session
-2. In the process, exercises code paths that can throw if `$now` or session metadata is not yet defined
+---
 
-**Targeted attack:**
-- Attacker knows a victim is logged in
-- Attacker finds any way to make a request *on behalf* of the victim (CSRF, XSS) with a spoofed `User-Agent` header
-- Victim's session is destroyed — they are logged out
-- This is repeatable — every login attempt can be met with a forged UA request
+**Attack Vector 1 — HTTP Man-in-the-Middle (most dangerous in this war-game context)**
+
+This only works on **HTTP** (not HTTPS). On a plain HTTP connection, every request travels in plaintext across the network. An attacker on the same LAN — which in a war-game setting is *every opposing team* — can run an ARP poisoning attack to insert themselves between the victim and the server as a silent relay:
+
+```
+Victim's browser
+      │
+      ↓  (ARP poison: "I am the router")
+Attacker's machine   ←── receives all victim traffic
+      │
+      │  forwards traffic normally...
+      │  ...but rewrites User-Agent header before forwarding
+      ↓
+Your server
+```
+
+The attacker modifies the `User-Agent` on every forwarded request. The server sees a different UA than the one stored in `$_SESSION['fingerprint']`. Mismatch fires on every single request. The victim is logged out the instant any request hits the server. When they log in again, the attacker rewrites the UA again. The victim cannot stay logged in — permanent denial of service from across the room, without needing any credentials, just network position.
+
+---
+
+**Attack Vector 2 — XSS (partial)**
+
+This is often listed but needs clarification: **JavaScript in a browser cannot set the `User-Agent` header**. It is a [forbidden request header](https://fetch.spec.whatwg.org/#forbidden-request-header) — the browser always strips it from `fetch()` and `XMLHttpRequest` calls and injects the real one.
+
+What XSS *can* do instead is use the victim's live session cookie to make requests from an environment that sends a different UA — for example, via a server-side relay the attacker controls:
+
+```
+Attacker's XSS payload (runs in victim's browser):
+→ Sends stolen cookie + session data to attacker's server
+
+Attacker's server:
+→ Replays that cookie in a curl/Python request with a spoofed UA
+→ Server sees UA mismatch
+→ Session destroyed
+```
+
+This is more indirect, but achievable if XSS is already present.
+
+---
+
+**Attack Vector 3 — Natural trigger (most frequent real-world risk)**
+
+No attacker needed. This vulnerability fires automatically on real user behaviour:
+
+1. User logs in on Chrome 121 → fingerprint stored: `sha256("Mozilla/5.0 ... Chrome/121..." + IP)`
+2. Chrome auto-updates overnight to Chrome 122 — the UA string changes
+3. Next morning, user opens any page → fingerprint mismatch triggered
+4. `resetSession()` is called → `session_destroy()` → second `session_start()` inside `resetSession()`
+5. If the second `session_start()` fails for any reason (headers already sent, file lock, disk full, another include already called it) → **fatal PHP error throws mid-handler**
+6. Session is half-destroyed: the data is wiped, but the session file may still exist, or the redirect never fires
+7. User is stuck: every login immediately breaks on the next request
+
+**Browser updates, privacy extensions that randomize UA, or simply a user switching from their phone to laptop** all trigger this. The `resetSession()` crash converts a routine event into a permanent account lockout. This is what makes C1.2 genuinely critical — it is a reliability bomb that fires for ordinary users with no attacker involved at all.
+
+---
+
+
 
 #### How the Fix Prevents It
 
-Move `$now = time()` to the very top of the execution block, before the fingerprint check, and ensure `resetSession()` never references undefined state:
+**Part 1 — `$now` hoisted before all session logic:**
 
 ```php
-// ✅ After
-$now = time();   // ← defined first, always
+// ✅ After — $now is the very first thing defined after session_start()
+session_start();
 
-$currentFingerprint = hash('sha256', $secret . $ua . $ip);
-if (!hash_equals($_SESSION['fingerprint'], $currentFingerprint)) {
-    logActivity('SESSION_HIJACK_DETECTED');
+$now = time(); // FIX: C1.2
+
+$inactivityTimeout = 1800;
+$absoluteLifetime  = 3600;
+$regenInterval     = 300;
+```
+
+`$now` and the timeout policy constants are declared immediately after `session_start()`. No code path anywhere in the file can run before `$now` is defined.
+
+**Part 2 — Fingerprint mismatch handler replaced with a hard stop:**
+
+```php
+// ✅ After — no resetSession(), no second session_start(), no partial state
+} elseif (!hash_equals($_SESSION['fingerprint'], $currentFingerprint)) {
+    if (function_exists('logActivity')) {
+        logActivity('SESSION_HIJACK_DETECTED');
+    }
     session_unset();
     session_destroy();
-    header("Location: /login.php");
-    exit;  // Hard stop — no resetSession() call, no partial state
+    header('Location: /login.php');
+    exit; // FIX: C1.2 — hard stop, resetSession() no longer called here
 }
 ```
 
-`$now` is available everywhere it is needed. The hijack response no longer calls `resetSession()` (which has side effects) — it simply destroys the session and redirects. State is never partially initialised.
+The call to `resetSession()` is gone. The mismatch handler now executes three operations in sequence — unset, destroy, redirect — and then exits. There is no second `session_start()`, no risk of incorrect cookie params on the reconstructed session, and no way for a partial state to persist. The attacker's forged UA request now results in a clean session destruction and redirect, not a call chain that could error mid-way and leave the session alive.
 
 ---
 
