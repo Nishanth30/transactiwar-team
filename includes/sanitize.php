@@ -6,22 +6,23 @@
 //                  header injection, null bytes,
 //                  unicode attacks, buffer overflow attempts
 
-declare(strict_types=1);
+declare(strict_types = 1)
+;
 // ══════════════════════════════════════════════════════════════════
 //  CONSTANTS — derived from your init.sql schema
 // ══════════════════════════════════════════════════════════════════
 
-define('MAX_USERNAME_LEN',  32);
-define('MIN_USERNAME_LEN',  5);
-define('MAX_EMAIL_LEN',     254);
-define('MAX_PASSWORD_LEN',  128);
-define('MIN_PASSWORD_LEN',  8);
-define('MAX_BIO_LEN',       65535);   // TEXT column
-define('MAX_COMMENT_LEN',   500);     // transactions.receiver_comment
-define('MAX_FILEPATH_LEN',  512);     // users.profile_image_path
-define('MAX_WEBPAGE_LEN',   255);     // activity_logs.webpage
-define('MIN_TRANSFER_PAISE', 100);    // ₹1.00 minimum
-define('PUBLIC_ID_LEN',      36);     // UUID string: 8-4-4-4-12
+define('MAX_USERNAME_LEN', 32);
+define('MIN_USERNAME_LEN', 5);
+define('MAX_EMAIL_LEN', 254);
+define('MAX_PASSWORD_LEN', 128);
+define('MIN_PASSWORD_LEN', 8);
+define('MAX_BIO_LEN', 65535); // TEXT column
+define('MAX_COMMENT_LEN', 500); // transactions.receiver_comment
+define('MAX_FILEPATH_LEN', 512); // users.profile_image_path
+define('MAX_WEBPAGE_LEN', 255); // activity_logs.webpage
+define('MIN_TRANSFER_PAISE', 100); // ₹1.00 minimum
+define('PUBLIC_ID_LEN', 36); // UUID string: 8-4-4-4-12
 
 
 // ══════════════════════════════════════════════════════════════════
@@ -44,7 +45,8 @@ define('PUBLIC_ID_LEN',      36);     // UUID string: 8-4-4-4-12
  *   echo escape_output($bio);
  *   <input value="<?= escape_output($value) ?>">
  */
-function escape_output(mixed $value): string {
+function escape_output(mixed $value): string
+{
     if ($value === null || $value === false) {
         return '';
     }
@@ -59,7 +61,7 @@ function escape_output(mixed $value): string {
         $str,
         ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5,
         'UTF-8',
-        true    // double encode — encode even already-encoded entities
+        true // double encode — encode even already-encoded entities
     );
 }
 
@@ -72,7 +74,8 @@ function escape_output(mixed $value): string {
  *     var username = "<?= escape_js($username) ?>";
  *   </script>
  */
-function escape_js(mixed $value): string {
+function escape_js(mixed $value): string
+{
     if ($value === null || $value === false) {
         return '';
     }
@@ -90,7 +93,8 @@ function escape_js(mixed $value): string {
  * Usage:
  *   <div data-user="<?= escape_attr($username) ?>">
  */
-function escape_attr(mixed $value): string {
+function escape_attr(mixed $value): string
+{
     if ($value === null || $value === false) {
         return '';
     }
@@ -127,7 +131,8 @@ function escape_attr(mixed $value): string {
  *   $username = clean_input($_POST['username'] ?? '');
  *   $email    = clean_input($_POST['email']    ?? '');
  */
-function clean_input(mixed $value): string {
+function clean_input(mixed $value): string
+{
     if ($value === null || $value === false) {
         return '';
     }
@@ -158,7 +163,8 @@ function clean_input(mixed $value): string {
  * Usage:
  *   $username = post_str('username');
  */
-function post_str(string $key): string {
+function post_str(string $key): string
+{
     return clean_input($_POST[$key] ?? '');
 }
 
@@ -169,7 +175,8 @@ function post_str(string $key): string {
  * Usage:
  *   $search = get_str('q');
  */
-function get_str(string $key): string {
+function get_str(string $key): string
+{
     return clean_input($_GET[$key] ?? '');
 }
 
@@ -180,7 +187,8 @@ function get_str(string $key): string {
  * Usage:
  *   $receiverId = post_int('receiver_id');
  */
-function post_int(string $key): ?int {
+function post_int(string $key): ?int
+{
     return sanitize_int($_POST[$key] ?? null);
 }
 
@@ -188,7 +196,8 @@ function post_int(string $key): ?int {
  * Read a GET integer value.
  * Returns null if missing or not a valid integer.
  */
-function get_int(string $key): ?int {
+function get_int(string $key): ?int
+{
     return sanitize_int($_GET[$key] ?? null);
 }
 
@@ -206,7 +215,8 @@ function get_int(string $key): ?int {
  *   $userId   = sanitize_int($_POST['user_id']);
  *   $amount   = sanitize_int($_POST['amount_paise']);
  */
-function sanitize_int(mixed $value): ?int {
+function sanitize_int(mixed $value): ?int
+{
     if ($value === null || $value === '') {
         return null;
     }
@@ -221,10 +231,10 @@ function sanitize_int(mixed $value): ?int {
 
     // Check it fits in PHP int range
     if (!filter_var($str, FILTER_VALIDATE_INT, [
-        'options' => [
-            'min_range' => PHP_INT_MIN,
-            'max_range' => PHP_INT_MAX,
-        ]
+    'options' => [
+    'min_range' => PHP_INT_MIN,
+    'max_range' => PHP_INT_MAX,
+    ]
     ])) {
         return null;
     }
@@ -240,7 +250,8 @@ function sanitize_int(mixed $value): ?int {
  *   $userId = sanitize_uint($_POST['receiver_id']);
  *   if ($userId === null) { $error = 'Invalid user ID'; }
  */
-function sanitize_uint(mixed $value): ?int {
+function sanitize_uint(mixed $value): ?int
+{
     $int = sanitize_int($value);
 
     if ($int === null || $int <= 0) {
@@ -258,7 +269,8 @@ function sanitize_uint(mixed $value): ?int {
  *   $amount = sanitize_amount($_POST['amount_paise']);
  *   if ($amount === null) { $error = 'Minimum transfer is ₹1'; }
  */
-function sanitize_amount(mixed $value): ?int {
+function sanitize_amount(mixed $value): ?int
+{
     $int = sanitize_int($value);
 
     if ($int === null || $int < MIN_TRANSFER_PAISE) {
@@ -275,7 +287,8 @@ function sanitize_amount(mixed $value): ?int {
  * Usage:
  *   $receiverPublicId = sanitize_public_user_id($_POST['receiver_public_id']);
  */
-function sanitize_public_user_id(mixed $value): ?string {
+function sanitize_public_user_id(mixed $value): ?string
+{
     if ($value === null || $value === false) {
         return null;
     }
@@ -288,8 +301,8 @@ function sanitize_public_user_id(mixed $value): ?string {
     }
 
     if (!preg_match(
-        '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',
-        $str
+    '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',
+    $str
     )) {
         return null;
     }
@@ -315,16 +328,17 @@ function sanitize_public_user_id(mixed $value): ?string {
  * Usage:
  *   if (!validate_username($username)) { $error = 'Invalid username'; }
  */
-function validate_username(string $username): bool {
+function validate_username(string $username): bool
+{
     if (strlen($username) < MIN_USERNAME_LEN ||
-        strlen($username) > MAX_USERNAME_LEN) {
+    strlen($username) > MAX_USERNAME_LEN) {
         return false;
     }
 
     // Only alphanumeric, underscore, hyphen
     // Cannot start or end with underscore or hyphen
     if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9-_]*[a-zA-Z0-9]$/', $username) &&
-        !preg_match('/^[a-zA-Z0-9]$/', $username)) {
+    !preg_match('/^[a-zA-Z0-9]$/', $username)) {
         return false;
     }
 
@@ -341,7 +355,8 @@ function validate_username(string $username): bool {
  * Usage:
  *   if (!validate_email($email)) { $error = 'Invalid email'; }
  */
-function validate_email(string $email): bool {
+function validate_email(string $email): bool
+{
     if (strlen($email) > MAX_EMAIL_LEN) {
         return false;
     }
@@ -366,7 +381,8 @@ function validate_email(string $email): bool {
  * Usage:
  *   $email = normalize_email($_POST['email']);
  */
-function normalize_email(string $email): string {
+function normalize_email(string $email): string
+{
     return strtolower(trim($email));
 }
 
@@ -382,7 +398,8 @@ function normalize_email(string $email): string {
  * Usage:
  *   if (!validate_password($password)) { $error = 'Weak password'; }
  */
-function validate_password(string $password): bool {
+function validate_password(string $password): bool
+{
     $len = strlen($password);
 
     if ($len < MIN_PASSWORD_LEN || $len > MAX_PASSWORD_LEN) {
@@ -416,7 +433,8 @@ function validate_password(string $password): bool {
  * Get human readable password requirements.
  * Show this to users on register page.
  */
-function password_requirements(): string {
+function password_requirements(): string
+{
     return 'Password must be 8-128 characters and include: 
             uppercase letter, lowercase letter, number, 
             and special character (!@#$%^&* etc.)';
@@ -440,9 +458,15 @@ function password_requirements(): string {
  * Usage:
  *   $bio = sanitize_bio($_POST['bio'] ?? '');
  */
-function sanitize_bio(string $bio): string {
+function sanitize_bio(string $bio): string
+{
     // Remove null bytes
     $bio = str_replace("\0", '', $bio);
+
+    // Attacker's 65,000-char payload gets cut to 65,535 chars max
+    // But strip_tags on even 65k of <a<a<a is dangerous
+    // So truncate to a safe working limit BEFORE parsing
+    $bio = mb_substr($bio, 0, MAX_BIO_LEN, 'UTF-8');
 
     // Strip ALL html tags — no markup in biography
     $bio = strip_tags($bio);
@@ -473,10 +497,11 @@ function sanitize_bio(string $bio): string {
  * Usage:
  *   $comment = sanitize_comment($_POST['comment'] ?? '');
  */
-function sanitize_comment(string $comment): string {
+function sanitize_comment(string $comment): string
+{
     // Remove null bytes
     $comment = str_replace("\0", '', $comment);
-
+    $comment = mb_substr($comment, 0, MAX_COMMENT_LEN, 'UTF-8');
     // Strip HTML tags
     $comment = strip_tags($comment);
 
@@ -514,7 +539,8 @@ function sanitize_comment(string $comment): string {
  *   $safeName = sanitize_filename($originalName);
  *   // Then Member 2 renames it with UUID anyway
  */
-function sanitize_filename(string $filename): string {
+function sanitize_filename(string $filename): string
+{
     // Remove null bytes — critical for null byte injection
     $filename = str_replace("\0", '', $filename);
 
@@ -533,7 +559,7 @@ function sanitize_filename(string $filename): string {
     $filename = preg_replace('/\.{2,}/', '.', $filename ?? '');
 
     // Extract extension safely
-    $ext      = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
     $basename = pathinfo($filename, PATHINFO_FILENAME);
 
     // Allowed image extensions only
@@ -565,7 +591,8 @@ function sanitize_filename(string $filename): string {
  *       $error = 'File type not allowed';
  *   }
  */
-function validate_file_extension(string $filename, array $allowed): bool {
+function validate_file_extension(string $filename, array $allowed): bool
+{
     $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
     return in_array($ext, $allowed, true);
 }
@@ -582,7 +609,8 @@ function validate_file_extension(string $filename, array $allowed): bool {
  * Usage:
  *   header('Location: ' . sanitize_header($url));
  */
-function sanitize_header(string $value): string {
+function sanitize_header(string $value): string
+{
     // Remove ALL newline and carriage return characters
     // These are the core of header injection attacks
     $value = str_replace(["\r\n", "\r", "\n", "%0d", "%0a", "%0D", "%0A"], '', $value);
@@ -609,7 +637,8 @@ function sanitize_header(string $value): string {
  *   $next = safe_redirect_url($_GET['next'] ?? '/index.php');
  *   header('Location: ' . $next);
  */
-function safe_redirect_url(string $url, string $default = '/index.php'): string {
+function safe_redirect_url(string $url, string $default = '/index.php'): string
+{
     $url = trim($url);
 
     // Empty → use default
@@ -651,7 +680,8 @@ function safe_redirect_url(string $url, string $default = '/index.php'): string 
  *   $ip = get_client_ip();
  *   // use in logger.php
  */
-function get_client_ip(): string {
+function get_client_ip(): string
+{
     // Check proxy headers — but don't trust them blindly
     // X-Forwarded-For can be spoofed but is better than nothing
     $candidates = [];
@@ -673,8 +703,8 @@ function get_client_ip(): string {
 
     // Validate each candidate — return first valid IP
     foreach ($candidates as $ip) {
-        if (filter_var($ip, FILTER_VALIDATE_IP, 
-            FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+        if (filter_var($ip, FILTER_VALIDATE_IP,
+        FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
             return $ip;
         }
     }
@@ -689,11 +719,12 @@ function get_client_ip(): string {
  * Usage:
  *   $ip = sanitize_ip($rawIp);
  */
-function sanitize_ip(string $ip): string {
+function sanitize_ip(string $ip): string
+{
     $ip = trim($ip);
 
-    if (filter_var($ip, FILTER_VALIDATE_IP, 
-        FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+    if (filter_var($ip, FILTER_VALIDATE_IP,
+    FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
         return $ip;
     }
 
@@ -712,7 +743,8 @@ function sanitize_ip(string $ip): string {
  * Usage:
  *   $query = sanitize_search($_POST['q'] ?? '');
  */
-function sanitize_search(string $query): string {
+function sanitize_search(string $query): string
+{
     // Clean input first
     $query = clean_input($query);
 
@@ -737,7 +769,8 @@ function sanitize_search(string $query): string {
  * Usage:
  *   if (is_empty_input($username)) { $error = 'Username required'; }
  */
-function is_empty_input(string $value): bool {
+function is_empty_input(string $value): bool
+{
     return trim($value) === '';
 }
 
@@ -748,7 +781,8 @@ function is_empty_input(string $value): bool {
  * Usage:
  *   echo escape_output(truncate($bio, 100));
  */
-function truncate(string $str, int $length, string $suffix = '...'): string {
+function truncate(string $str, int $length, string $suffix = '...'): string
+{
     if (mb_strlen($str, 'UTF-8') <= $length) {
         return $str;
     }
@@ -766,7 +800,8 @@ function truncate(string $str, int $length, string $suffix = '...'): string {
  *   $publicId = sanitize_uuid($_POST['receiver_public_id'] ?? '');
  *   if ($publicId === null) { $error = 'Invalid user ID'; }
  */
-function sanitize_uuid(mixed $value): ?string {
+function sanitize_uuid(mixed $value): ?string
+{
     if ($value === null || $value === '') {
         return null;
     }
@@ -778,8 +813,8 @@ function sanitize_uuid(mixed $value): ?string {
 
     // Validate UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     if (!preg_match(
-        '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/',
-        $str
+    '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/',
+    $str
     )) {
         return null;
     }
