@@ -28,7 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
 
     // B. BIO SANITIZATION: Kills XSS and Null Bytes
-    $new_bio = sanitize_bio($_POST['bio'] ?? '');
+    // 🆕 RED TEAM FIX (E1): Decode HTML entities back to raw text before saving to prevent infinite double-encoding corruption.
+    $raw_input_bio = htmlspecialchars_decode($_POST['bio'] ?? '', ENT_QUOTES);
+    $new_bio = sanitize_bio($raw_input_bio);
 
     // C. FILE UPLOAD DEFENSE MATRIX (The RCE Killer)
     $image_path_query = "";
@@ -81,17 +83,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // D. DATABASE UPDATE & STORAGE CLEANUP
     if (empty($error_message)) {
         try {
+            // 🆕 RED TEAM FIX (E2): Transaction with row-locking to serialize concurrent uploads
+            $pdo->beginTransaction();
+
+            // 1. Lock the row and get the TRULY current image right at this exact millisecond
+            $lock_stmt = $pdo->prepare("SELECT profile_image_path FROM users WHERE id = :id FOR UPDATE");
+            $lock_stmt->execute([':id' => $user_id]);
+            $real_old_image = $lock_stmt->fetchColumn();
+
+            // 2. Execute the update
             $sql = "UPDATE users SET bio = :bio" . $image_path_query . " WHERE id = :id";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($bind_params);
+            
+            // 3. Commit the transaction (releases the lock for the next thread in line)
+            $pdo->commit();
+            
             $update_success = true;
 
-            // 🆕 ADDED: Log the successful profile update for the audit trail
+            // Log the successful profile update for the audit trail
             logActivity(LOG_PROFILE_UPDATE); 
 
-            // Defense 5: Storage Exhaustion Cleanup
-            if ($new_file_destination !== null && $old_image_path !== null) {
-                $old_file_full_path = __DIR__ . '/../public/uploads/' . basename($old_image_path);
+            // Defense 5: Storage Exhaustion Cleanup (Now using the strictly locked old image)
+            if ($new_file_destination !== null && $real_old_image) {
+                $old_file_full_path = __DIR__ . '/../public/uploads/' . basename($real_old_image);
                 if (file_exists($old_file_full_path) && is_file($old_file_full_path)) {
                     unlink($old_file_full_path); 
                 }
@@ -103,6 +118,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $current_user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         } catch (PDOException $e) {
+            // Safety net: Rollback if the transaction failed midway
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            
             // Info Disclosure Defense: Log the real error, show a generic one
             error_log("Profile Update Error: " . $e->getMessage());
             $error_message = "A database error occurred while saving your profile.";
