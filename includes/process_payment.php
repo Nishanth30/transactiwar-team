@@ -19,6 +19,8 @@ require_login();
 // Kills the request with 403 if token is missing, expired, or forged.
 verifyCsrf();
 
+$_SESSION['transfer_result'] = "fail";
+
 // ── Collect and sanitize inputs ──────────────────────────────────
 
 $sender_id = (int) $_SESSION['user_id'];
@@ -45,7 +47,7 @@ $raw_rupees = post_str('amount');
 if (!preg_match('/^\d+(\.\d{1,2})?$/', $raw_rupees)) {
     logActivity(LOG_TRANSFER_INVALID);
     $_SESSION['transfer_error'] = "Invalid amount format.";
-    header("Location: " . sanitize_header("/failure.php"));
+    header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 }
 
@@ -54,11 +56,10 @@ if (!preg_match('/^\d+(\.\d{1,2})?$/', $raw_rupees)) {
 $amount_paise = sanitize_amount((string) round((float)$raw_rupees * 100));
 
 // ── Early-exit guards ────────────────────────────────────────────
-
 if ($amount_paise === null) {
     logActivity(LOG_TRANSFER_INVALID);
     $_SESSION['transfer_error'] = "Minimum transfer amount is ₹1.00.";
-    header("Location: " . sanitize_header("/failure.php"));
+    header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 }
 
@@ -66,7 +67,7 @@ if ($target_uuid === null) {
     // Covers both missing and malformed UUIDs.
     logActivity(LOG_TRANSFER_INVALID);
     $_SESSION['transfer_error'] = "Invalid or missing receiver ID.";
-    header("Location: " . sanitize_header("/failure.php"));
+    header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 }
 
@@ -82,7 +83,7 @@ try {
     if (!$receiver) {
         logActivity(LOG_TRANSFER_INVALID);
         $_SESSION['transfer_error'] = "Receiver does not exist.";
-        header("Location: " . sanitize_header("/failure.php"));
+        header("Location: " . sanitize_header("/transaction_result.php"));
         exit;
     }
 
@@ -92,35 +93,55 @@ try {
     if ($receiver_id === $sender_id) {
         logActivity(LOG_TRANSFER_INVALID);
         $_SESSION['transfer_error'] = "You cannot send money to yourself.";
-        header("Location: " . sanitize_header("/failure.php"));
+        header("Location: " . sanitize_header("/transaction_result.php"));
         exit;
     }
 
     // Open transaction only after all cheap checks have passed.
-    // FOR UPDATE locks both rows to prevent race conditions / double-spend.
     $pdo->beginTransaction();
 
-    // Lock sender and read live balance atomically.
+    // ── Deadlock prevention: always lock the lower ID first ──────────
+    // If two concurrent transfers run between the same two accounts in
+    // opposite directions (A→B and B→A), each would lock its own sender
+    // row first and then wait for the other — classic deadlock.
+    // Locking in a globally consistent order (lower id first) means both
+    // transactions acquire locks in the same sequence, so neither blocks
+    // the other from making forward progress.
+    if ($sender_id < $receiver_id) {
+        $first_id  = $sender_id;
+        $second_id = $receiver_id;
+    } else {
+        $first_id  = $receiver_id;
+        $second_id = $sender_id;
+    }
+
+    // Lock first row (lower id)
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE id = ? FOR UPDATE");
+    $stmt->execute([$first_id]);
+    if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
+        throw new RuntimeException("account_not_found");
+    }
+
+    // Lock second row (higher id)
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE id = ? FOR UPDATE");
+    $stmt->execute([$second_id]);
+    if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
+        throw new RuntimeException("account_not_found");
+    }
+
+    // Both rows are now locked — read sender balance separately.
+    // The FOR UPDATE above already locked the row; this read is consistent.
     $stmt = $pdo->prepare("SELECT balance_paise FROM users WHERE id = ? FOR UPDATE");
     $stmt->execute([$sender_id]);
     $sender = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$sender) {
-        // Should never happen for a logged-in user, but fail safely.
         throw new RuntimeException("sender_not_found");
     }
 
     if ((int)$sender['balance_paise'] < $amount_paise) {
-        // Log before throwing so the event is captured even if rollback fires.
         logActivity(LOG_TRANSFER_FAIL);
         throw new RuntimeException("insufficient_balance");
-    }
-
-    // Lock receiver row — prevents the account being deleted mid-transfer.
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE id = ? FOR UPDATE");
-    $stmt->execute([$receiver_id]);
-    if (!$stmt->fetch(PDO::FETCH_ASSOC)) {
-        throw new RuntimeException("receiver_not_found");
     }
 
     // Deduct from sender — WHERE id = ? prevents updating wrong row.
@@ -145,8 +166,8 @@ try {
     $pdo->commit();
 
     logActivity(LOG_TRANSFER_OK);
-
-    header("Location: " . sanitize_header("/success.php"));
+    $_SESSION['transfer_result'] = "successful";
+    header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 
 } catch (RuntimeException $e) {
@@ -170,7 +191,7 @@ try {
     // Log the raw code server-side so your team can investigate.
     logSecurityEvent(LOG_TRANSFER_FAIL, $code);
 
-    header("Location: " . sanitize_header("/failure.php"));
+    header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 
 } catch (Throwable $e) {
@@ -182,6 +203,6 @@ try {
     logSecurityEvent(LOG_TRANSFER_FAIL, "unexpected:" . get_class($e));
 
     $_SESSION['transfer_error'] = "An unexpected error occurred. Please try again.";
-    header("Location: " . sanitize_header("/failure.php"));
+    header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 }

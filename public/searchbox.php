@@ -32,7 +32,6 @@ include("header.html");
 <h2>Search Users</h2>
 
 <form method="GET" action="">
-    <?= csrfField(); ?>
     <input type="text" name="q" id="searchbar" placeholder="Search users...">
     <button type="submit">Search</button>
 </form>
@@ -40,12 +39,14 @@ include("header.html");
 <div class="results-container">
 <?php
 
+
 $query = sanitize_search(get_str('q'));
 
 if (!is_empty_input($query)) {
     logActivity(LOG_SEARCH);
 
-    $searchTerm = "%" . $query . "%";
+    // $searchTerm = "%" . $query . "%";
+    $searchTerm = $query;
 
     // Check PDO is available
     if (!isset($pdo) || $pdo === null) {
@@ -55,15 +56,20 @@ if (!is_empty_input($query)) {
     $stmt = $pdo->prepare("
         SELECT username, public_id 
         FROM users 
-        WHERE username LIKE :search OR public_id LIKE :search
+        WHERE username = :search1 OR public_id = :search2
         LIMIT 32
     ");
+
 
     if (!$stmt) {
         die("<p style='color:red;'>Query prepare failed.</p>");
     }
 
-    $stmt->execute(['search' => $searchTerm]);
+    // $stmt->execute(['search' => $searchTerm]);
+    $stmt->execute([
+        ':search1' => $searchTerm,
+        ':search2' => $searchTerm,
+    ]);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (count($rows) === 0) {
