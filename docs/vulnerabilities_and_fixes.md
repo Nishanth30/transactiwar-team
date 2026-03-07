@@ -16,11 +16,12 @@ Issues are grouped by the file they originate in. Pure code-correctness blunders
 ### A2 — Public Profile Endpoint Leaks Email and Balance to Any User
 
 **Severity:** 🔴 Critical  
-**Attack class:** Information Disclosure / Financial Data Exposure
+**Attack class:** Information Disclosure / Financial Data Exposure  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
-`get_user_by_public_id()` — called by the search and transfer pages whenever one user looks up another — fetched sensitive columns alongside safe ones:
+`get_user_by_public_id()` — called whenever one user looks up or transfers to another — returned sensitive database columns alongside safe display fields:
 
 ```php
 // ❌ Before
@@ -28,124 +29,206 @@ SELECT id, public_id, username, email, balance_paise, bio, profile_image_path
 FROM users WHERE public_id = :public_id
 ```
 
+This function was used on the search page and transfer page — both accessible by any logged-in user.
+
 #### The Vulnerability
 
-Any logged-in attacker can call the search or transfer page with any `public_id` and the response will contain the target's **email address** and **exact account balance in paise**. This covers the entire user base because UUIDs can be iterated — an attacker who registers and receives one UUID can derive a likely range of nearby registrations.
+Every API response for a peer lookup included `email` and `balance_paise`. There was no authentication check to see if the requestor was the account owner — any account could query any other.
 
-**Concrete attack:**
-1. Attacker registers an account and notes their own `public_id`.
-2. Attacker systematically guesses nearby UUID values (or uses the UUID v1 timestamp predictability — see A8) and queries the search endpoint for each.
-3. For every hit, they receive the target's email and balance.
-4. Attacker builds a full list of all users, their emails, and their balances — a complete financial data breach.
+**Step-by-step attack:**
+
+```
+Step 1 — Attacker registers an account
+  They receive their own public_id: 550e8400-e29b-41d4-a716-446655440000
+  This is a UUID v1 — it encodes the timestamp of registration (see A8).
+
+Step 2 — Attacker decodes the timestamp from their UUID and generates adjacent IDs
+  Using any UUID v1 parser (Python, JS, or online tool):
+    Time extracted: 2026-03-07 10:00:00.000
+  Generate UUIDs for timestamps -30 minutes to +30 minutes from this.
+  With UUID v1's 100ns resolution, this yields millions of candidate IDs
+  but only a handful of real registrations will hit.
+
+Step 3 — Attacker queries the search/transfer endpoint for each candidate
+  GET /search.php?q=550e8400-e29b-41d4-a716-000000000001
+  Response: { username: "alice", email: "alice@uni.in", balance_paise: 5000000 }
+
+  GET /search.php?q=550e8400-e29b-41d4-a716-000000000002  
+  Response: { username: "bob", email: "bob@uni.in", balance_paise: 250000 }
+
+Step 4 — Full user map built in minutes
+  Attacker scripts this across all candidate UUIDs.
+  Every registered account reveals its email and exact balance.
+  Result: complete financial intelligence on all players before any transfer.
+```
+
+Combined with A8 (UUID v1 predictability), the attacker can enumerate the entire user base — not just guess randomly, but generate a precise ordered list of every registration.
 
 #### How the Fix Prevents It
 
-The query was split into two purpose-specific functions:
+The function was split into two strictly scoped versions:
 
 ```php
-// ✅ Public lookup — safe fields only
+// ✅ Public lookup — safe fields only, no financial data
 SELECT id, public_id, username, bio, profile_image_path
 FROM users WHERE public_id = :public_id
 
-// ✅ Owner-only — requires internal session user ID, not public_id
+// ✅ Owner-only — gated on internal integer ID from session, not public_id
 function get_own_profile(PDO $pdo, int $userId): ?array {
     SELECT id, public_id, username, email, balance_paise, ...
-    FROM users WHERE id = :id
+    FROM users WHERE id = :id  // ← only the session user's own ID reaches here
 }
 ```
 
-The sensitive version requires the **internal integer `id`** which only comes from the authenticated session. A peer lookup can no longer access another user's email or balance, regardless of how many `public_id` values the attacker enumerates.
+The sensitive `get_own_profile()` takes the **internal integer `id`** which only comes from `$_SESSION['user_id']` — it is never exposed in URLs or API responses. An attacker enumerating `public_id` values gets only usernames and avatars. Email and balance are invisible to any peer lookup, regardless of how many IDs are probed.
 
 ---
 
 ### A3 + A4 — Lockout Mechanism Itself Grants Login; Lockout Events Never Logged
 
 **Severity:** 🔴 Critical  
-**Attack class:** Authentication Bypass + Blind Brute Force
+**Attack class:** Authentication Bypass + Blind Brute Force  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
+
+Two separate bugs existed in the same lockout code path:
 
 ```php
 // ❌ Before
 if (is_ip_locked($pdo, $ip)) {
-    /* logActivity(LOG_LOGIN_LOCKED); */   // ← commented out
+    /* logActivity(LOG_LOGIN_LOCKED); */   // ← deliberately commented out
     usleep(random_int(...));
-    return 'locked';                       // ← non-false truthy string
+    return 'locked';                       // ← returns a non-empty STRING, not false
 }
 ```
 
-In `login.php`, the result of `login_user()` was checked loosely:
+And in `login.php`, the result was checked with a loose boolean:
 ```php
-if (login_user($pdo, $identifier, $password)) {
-    // logged in
+if (login_user($pdo, $username, $password)) {
+    // grant access
 }
 ```
 
 #### The Vulnerability
 
-**A3 — Authentication bypass via truthy lockout string:**  
-PHP evaluates any non-empty string as `true` in a boolean context. When an IP is locked, `login_user()` returns the string `'locked'`. The login page's `if (login_user(...))` check evaluates that as `true` and admits the user as successfully authenticated — **without ever verifying a password**. An attacker who deliberately triggers rate-limiting on their own IP gets full access to the application.
+**A3 — The lockout itself is the login bypass:**
 
-**A4 — Blind brute force:**  
-The logging call for `LOG_LOGIN_LOCKED` was commented out. Lockout events left no trace in activity logs or security logs. An attacker could hammer the login endpoint, trigger lockouts, receive the access bypass, and the security team would see nothing — no spike in logs, no `BRUTE_FORCE_DETECTED` event, no alert.
+In PHP, any non-empty string evaluates to `true` in a boolean context. `'locked'` is a non-empty string. Therefore:
 
-**Combined real-world attack:**
-1. Attacker fails login 5 times with any password for any username.
-2. IP is locked. `login_user()` returns `'locked'`.
-3. `if ('locked')` → `true` → attacker is logged in.
-4. No log entry exists. Defenders see nothing.
+```
+$result = login_user($pdo, 'alice', 'wrongpassword');
+// After 5 failed attempts, IP is locked.
+// login_user() returns 'locked'
+
+if ($result) {   // if ('locked') → TRUE
+    // Attacker is granted access as if they logged in correctly
+    $_SESSION['user_id'] = ...  // ← this code runs
+}
+```
+
+The password is never checked. The account targeted doesn't even matter — **the lockout mechanism itself is the backdoor**.
+
+**Step-by-step attack:**
+
+```
+Step 1 — Attacker deliberately fails 5 logins with any username/password
+  POST /login.php  username=alice&password=wrong   → fail
+  POST /login.php  username=alice&password=wrong   → fail
+  POST /login.php  username=alice&password=wrong   → fail
+  POST /login.php  username=alice&password=wrong   → fail
+  POST /login.php  username=alice&password=wrong   → fail
+
+Step 2 — IP is now locked, next attempt returns 'locked'
+  POST /login.php  username=alice&password=anything
+  login_user() → is_ip_locked() → true → return 'locked'
+
+Step 3 — login.php evaluates 'locked' as true — attacker is authenticated
+  if ('locked')  → true
+  Session is populated with alice's user_id.
+  Attacker is inside alice's account.
+  No valid password was ever entered.
+```
+
+**A4 — The attack leaves zero trace:**
+
+The `logActivity(LOG_LOGIN_LOCKED)` call was commented out. Every lockout event — including the bypass above — generated no log entry. Defenders watching the security dashboard would see:
+- Zero locked IP log entries
+- Possibly a successful login for alice right after 5 failures — but the 5 failures may not stand out without lockout context
+
+An attacker could use this bypass against any account, repeatedly, with no audit trail.
 
 #### How the Fix Prevents It
 
 ```php
-// ✅ After
+// ✅ After — A3: false, not string. A4: logging always runs.
 if (is_ip_locked($pdo, $ip)) {
-    logActivity(LOG_LOGIN_LOCKED);   // A4: every lockout is now recorded
+    logActivity(LOG_LOGIN_LOCKED);   // logged unconditionally
     usleep(random_int(...));
-    return false;                    // A3: false cannot be misread as success
+    return false;                    // false — PHP cannot evaluate as truthy
 }
 ```
 
-`false` is unambiguously rejected by any valid boolean check. The lockout now generates a `LOGIN_LOCKED` log entry, giving defenders a real-time signal of brute-force activity.
+`false` is the only value PHP cannot accidentally cast to `true`. The lockout event is now logged before the delay — even if something crashes afterward, the log entry already exists. Defenders get a real-time `LOGIN_LOCKED` signal for every lockout triggered, making brute-force campaigns immediately visible.
 
 ---
 
 ### A5 — Session Cookie Not Deleted on Logout (Missing `SameSite`)
 
 **Severity:** 🔴 Critical  
-**Attack class:** Session Persistence After Logout / CSRF-Based Session Theft
+**Attack class:** Session Persistence After Logout / CSRF-Forced Logout  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
-`logout_user()` called `setcookie()` using the old 7-argument PHP signature:
+`logout_user()` called `setcookie()` using PHP's old 7-positional-argument form:
 
 ```php
-// ❌ Before
+// ❌ Before — no way to set SameSite in this signature
 setcookie(
     session_name(), '',
-    time() - 42000,
+    time() - 42000,    // expired
     $params['path'],
     $params['domain'],
     $params['secure'],
     $params['httponly']
-    // SameSite not settable in this positional form
+    // SameSite: impossible to set here
 );
 ```
 
+Meanwhile, the session cookie was originally issued by `session.php` with `SameSite=Lax` set via `session_set_cookie_params()`.
+
 #### The Vulnerability
 
-Two separate attack vectors arise from the missing `SameSite` attribute on the deletion cookie:
+**Attack 1 — Session survives logout (cookie deletion silently rejected):**
 
-**1. Cookie deletion rejected by browser:**  
-For a `Set-Cookie` header to delete an existing cookie, the new cookie must match the old one on `Name`, `Domain`, `Path`, and `SameSite`. If the original session cookie was set by PHP with `SameSite=Strict` (as configured in `session.php`) but the deletion cookie has no `SameSite` attribute, some browsers treat them as *different* cookies and **ignore the deletion**. The user's session remains active after logout, leaving the session open for cookie theft via XSS or network sniffing.
+For a browser to delete a cookie, the `Set-Cookie` deletion header must match the original cookie on *all* attributes — including `SameSite`. If the cookie was issued with `SameSite=Lax` but the deletion is sent without any `SameSite` attribute, modern browsers (Chrome 80+, Firefox 96+) treat them as **two different cookies**. The deletion targets a cookie that doesn't exist. The original cookie stays untouched.
 
-**2. CSRF-based forced logout (denial of service):**  
-Without `SameSite`, an attacker can embed a cross-origin image tag or form pointing to `/logout.php`. Any user who visits the attacker's page will have their session ended silently. While not directly an account takeover, it is a reliable denial-of-service against any authenticated user.
+```
+Original session cookie:  PHPSESSID=abc123; SameSite=Lax; HttpOnly; Secure
+Logout deletion attempt:  PHPSESSID=;       expires=past; HttpOnly; Secure
+                                            ↑ no SameSite
+
+Browser evaluation: "These are different cookies. I will not delete the first."
+Result: User thinks they've logged out. Session cookie still active.
+```
+
+An attacker with the session cookie (stolen before logout) can now still use it — the logout did nothing.
+
+**Attack 2 — CSRF forced logout (denial of service):**
+
+Without `SameSite`, cross-origin requests carry the session cookie. An attacker hosting a page at `evil.example.com` can embed:
+
+```html
+<img src="https://yourapp.com/logout.php" style="display:none">
+```
+
+Any victim who visits `evil.example.com` while logged in will have their session silently destroyed. In a war-game context, an attacker who discovers any open redirector or XSS on an external site can use this to continuously log out competing team members — a reliable, zero-credential denial of service.
 
 #### How the Fix Prevents It
 
 ```php
-// ✅ After — PHP 7.3+ array form, all attributes mirrored
+// ✅ After — PHP 7.3+ array form, SameSite explicitly mirrored
 setcookie(session_name(), '', [
     'expires'  => time() - 42000,
     'path'     => $params['path'],
@@ -156,106 +239,170 @@ setcookie(session_name(), '', [
 ]);
 ```
 
-The deletion cookie now exactly mirrors the original session cookie's attributes. Browsers recognise it as the same cookie and honour the deletion. `SameSite=Lax` (minimum safe value) also blocks the CSRF forced-logout attack by preventing cross-origin requests from carrying the cookie.
+The deletion cookie now has an identical `SameSite` value to the original. The browser sees a match on all attributes and honours the deletion. Additionally, `SameSite=Lax` means any cross-origin request to `/logout.php` will have the session cookie stripped by the browser before it's even sent — the CSRF forced-logout attempt silently fails.
 
 ---
 
 ### A6 — IP Bypasses Proxy-Aware Detection; Rate Limiting and Session Binding Broken
 
 **Severity:** 🟡 Medium  
-**Attack class:** Rate Limit Evasion / Session Binding Defeat / Denial of Service
+**Attack class:** Rate Limit Evasion / Session Binding Defeat / Self-Inflicted DoS  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
-`login_user()` and `require_login()` both hardcoded `$_SERVER['REMOTE_ADDR']` for IP resolution, bypassing the application's own `get_client_ip()` proxy-aware function:
+Both `login_user()` and `require_login()` hardcoded `$_SERVER['REMOTE_ADDR']` instead of using the app's own `get_client_ip()` function:
 
 ```php
-// ❌ Before (both functions)
+// ❌ Before — in both functions
 $ip = sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
 ```
 
 #### The Vulnerability
 
-In any production deployment with a reverse proxy or load balancer, `REMOTE_ADDR` is always the **proxy's IP** — every request from every user arrives with the same IP address.
+In a proxied deployment (load balancer, Nginx reverse proxy, Docker network), `REMOTE_ADDR` is always the **proxy's internal IP** — never the actual client. Every user request arrives from the same address.
 
-**1. Rate limiting becomes platform-wide:**  
-`is_ip_locked()` checks the IP stored in `login_attempts`. If that IP is always the proxy's (e.g., `10.0.0.1`), then one user failing 5 logins locks **everyone on the platform** out simultaneously — an unintentional self-inflicted denial of service.
+**Attack 1 — Rate limit lockout affects the entire platform:**
 
-**2. Session binding becomes meaningless or breaks for all users:**  
-At login, `$_SESSION['ip']` is set to `REMOTE_ADDR` (the proxy IP). At every subsequent request, `require_login()` also reads `REMOTE_ADDR` (the proxy IP). The values always match — so the session binding check never catches a stolen cookie used from a different real IP. The anti-hijacking control is completely neutered.
+```
+Setup: App sits behind Nginx proxy at 10.0.0.1
 
-**3. Conversely: if functions are mixed**, one using `REMOTE_ADDR` and another using `get_client_ip()`, the stored IP and the checked IP are different on every request — every legitimate user is immediately logged out after login.
+User A fails login 5 times:
+  Each attempt records IP 10.0.0.1 in login_attempts.
+  After 5 fails: is_ip_locked(10.0.0.1) → true.
+
+User B tries to log in at the same moment:
+  Their request also comes from REMOTE_ADDR=10.0.0.1.
+  is_ip_locked(10.0.0.1) → true → they are blocked.
+
+Result: One user's failed logins lock out the entire application.
+All 50 players are denied access until the lockout window expires.
+```
+
+In a war-game, an opposing team can deliberately trigger this: repeatedly fail login for any account from their machine — all legitimate users on the platform are simultaneously locked out.
+
+**Attack 2 — Session binding check never catches stolen cookies:**
+
+```
+At login:
+  $_SESSION['ip'] = REMOTE_ADDR = '10.0.0.1'  (proxy IP)
+
+Attacker steals victim's cookie and uses it from a different city:
+  require_login() reads: REMOTE_ADDR = '10.0.0.1'  (same proxy IP)
+  Stored:               $_SESSION['ip'] = '10.0.0.1'
+  Comparison: match → no hijack detected.
+
+The IP binding anti-hijacking control does nothing.
+Any stolen cookie from any location passes unchallenged.
+```
+
+**Attack 3 — If functions use different methods, every user is logged out on every request:**
+
+```
+login_user()    stores: $_SESSION['ip'] = get_client_ip() → '203.0.113.42' (real IP)
+require_login() checks:                  REMOTE_ADDR      → '10.0.0.1'    (proxy IP)
+
+'203.0.113.42' ≠ '10.0.0.1' → mismatch → session destroyed → redirect to login.
+
+Every authenticated page load immediately logs the user out.
+```
 
 #### How the Fix Prevents It
 
 ```php
-// ✅ After — uniform proxy-aware IP resolution in both functions
+// ✅ After — identical IP resolution in both functions
 $ip = function_exists('get_client_ip')
     ? get_client_ip()
     : sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
 ```
 
-Both `login_user()` and `require_login()` now use the same code path. The real client IP (passed through trusted proxy headers) is consistent across login and all subsequent requests, making rate limiting per-user and session binding reliable.
+Both functions now use the same source. `get_client_ip()` returns the real client IP from trusted proxy headers (or falls back to `REMOTE_ADDR` if no proxy is involved). Rate limiting is per-real-client, session binding compares the same IP at login and at every subsequent request, and there is no mismatch between the two functions.
 
 ---
 
 ### A8 — Database Generates UUID v1; Attacker Can Predict All User Public IDs
 
 **Severity:** 🟡 Medium  
-**Attack class:** User Enumeration / Public ID Prediction
+**Attack class:** User Enumeration / Public ID Prediction  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
-`register_user()` inserted a new user without providing `public_id`, relying on a database trigger to call MySQL's `UUID()`:
+`register_user()` inserted without specifying `public_id`, leaving it to a database trigger calling MySQL's `UUID()` function:
 
 ```php
 // ❌ Before
 INSERT INTO users (username, email, password_hash)
 VALUES (:username, :email, :password_hash)
+// Database trigger calls UUID() → generates UUID v1
 ```
 
 #### The Vulnerability
 
-MySQL's `UUID()` generates **UUID version 1**. A UUID v1 encodes two pieces of information directly in its structure:
+**What is UUID v1?**  
+MySQL's `UUID()` produces UUID version 1. A UUID v1 is not random — it is deterministically computed from:
+- **Timestamp** — current time to 100-nanosecond resolution, encoded in the first three segments
+- **Node ID** — the MAC address of the database server's network card (or a pseudo-random substitute in virtual environments)
 
-- **Timestamp** — the exact time of generation, to 100-nanosecond resolution
-- **Node ID** — the MAC address of the database server's network card (or a pseudo-random node on virtual machines)
+A UUID v1 looks like: `1ef3c8d0-dc8b-11ee-b4a7-0242ac130002`  
+The `11ee` segment encodes version, and the first part encodes the timestamp. Anyone can reverse this.
 
-This makes `public_id` values **not random** — they are predictable from the outside.
+**Step-by-step attack:**
 
-**Concrete attack:**
-1. Attacker registers an account at time `T` and receives their own `public_id`.
-2. They decode the UUID v1 timestamp from it.
-3. They generate a list of UUID v1 values for timestamps `T - N` to `T + N` using the same node ID.
-4. They probe the search and transfer endpoints with each UUID.
-5. Every hit reveals a valid user. Combined with the A2 vulnerability (now fixed), each hit also exposed that user's email and balance.
+```
+Step 1 — Attacker registers an account and receives their own public_id
+  Response: public_id = 1ef3c8d0-dc8b-11ee-b4a7-0242ac130002
 
-Even with A2 fixed, UUID v1 enumeration still lets an attacker map the user base, identify registration timing patterns, and target specific users.
+Step 2 — Attacker decodes the UUID v1 timestamp
+  Using Python: import uuid; uuid.UUID('1ef3c8d0-dc8b-11ee-b4a7-0242ac130002').time
+  Output: 138784523212345678  (100ns intervals since Oct 1582)
+  Converted: 2026-03-07 10:00:00.123456789 UTC
+  Node ID:   0242ac130002  ← database server MAC / container ID
+
+Step 3 — Generate UUIDs for all registrations in a time window
+  For every 100ns tick in range [T-1hr, T+1hr]:
+    Generate UUID v1 with same node ID and that timestamp.
+  This yields 36,000,000 candidate IDs for a 1-hour window.
+  Actual registrations might be ~50 — so 50 hits in 36M attempts.
+
+Step 4 — Probe the search/transfer endpoint with each candidate
+  Script this in Python with asyncio — 36M requests takes ~minutes at LAN speed.
+  Every HTTP 200 reveals a real user.
+  Combined with A2 (now fixed separately), each hit exposed email + balance.
+
+Step 5 — Even with A2 fixed, attacker maps the entire user base
+  Attacker knows every registered username and their public_id.
+  They now know exactly who to target for transfers, DoS, or social engineering.
+```
+
+Note: UUID v1 generation in Docker containers often uses a predictable pseudo-random node ID derived from the container's network interface — making the node component even easier to reproduce.
 
 #### How the Fix Prevents It
 
 ```php
-// ✅ After — 122-bit cryptographic randomness, generated in PHP
+// ✅ After — 122 bits of OS-level cryptographic randomness
 function generate_uuid_v4(): string {
-    $data    = random_bytes(16);                          // OS CSPRNG
-    $data[6] = chr(ord($data[6]) & 0x0f | 0x40);         // set version 4
-    $data[8] = chr(ord($data[8]) & 0x3f | 0x80);         // set variant
+    $data    = random_bytes(16);                          // /dev/urandom
+    $data[6] = chr(ord($data[6]) & 0x0f | 0x40);         // force version 4 bits
+    $data[8] = chr(ord($data[8]) & 0x3f | 0x80);         // force variant bits
     return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 }
 
+// Registration now passes the PHP-generated UUID explicitly:
 INSERT INTO users (public_id, username, email, password_hash)
 VALUES (:public_id, :username, :email, :password_hash)
-// 'public_id' => generate_uuid_v4()
+// bound as: 'public_id' => generate_uuid_v4()
 ```
 
-UUID v4 contains no timestamp and no node ID. Its 122 bits come entirely from the OS cryptographic random number generator (`/dev/urandom` on Linux). The probability of guessing any valid UUID is `1 / 2^122` — not computationally feasible. User enumeration via UUID prediction becomes impossible.
+UUID v4 has no timestamp and no node ID. All 122 non-version bits come from `/dev/urandom` — the OS kernel's cryptographic random pool seeded from hardware entropy. The search space is `2^122 ≈ 5.3 × 10^36`. Even scanning 36 million candidates per hour would take longer than the age of the universe to find a valid UUID by chance.
 
 ---
 
 ### A9 — Logout Does Not Immediately Invalidate Session ID; Stolen Cookies Remain Valid
 
 **Severity:** 🟡 Medium  
-**Attack class:** Post-Logout Session Hijacking
+**Attack class:** Post-Logout Session Hijacking  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
@@ -265,80 +412,152 @@ $_SESSION = [];
 session_destroy();
 ```
 
+`session_destroy()` deletes the session *data* from the server's store, but does **not** immediately delete the session *file*. The session ID in the browser cookie still refers to a file that may still exist on disk.
+
 #### The Vulnerability
 
-`session_destroy()` removes the session data from the server's session store but **the session ID itself is not immediately invalidated**. Depending on the session backend:
+PHP's default session handler stores sessions as files in `/tmp/sess_<sessionid>`. When `session_destroy()` is called:
+1. PHP marks the file for deletion
+2. The actual deletion depends on **garbage collection** — which runs probabilistically based on `session.gc_probability` and `session.gc_divisor`
+3. The default is `gc_probability=1`, `gc_divisor=100` — a 1% chance GC runs on any given request
 
-- **File-based sessions (PHP default):** the session file is marked for deletion but may persist until garbage collection runs. An attacker holding the old cookie can send a request before GC and still be recognised.
-- **Database-backed sessions:** same race condition applies.
+There is a window — potentially several minutes — where the session file still exists on disk but the server thinks the session is destroyed.
 
-**Concrete attack scenario:**
-1. Attacker steals a user's session cookie (via XSS, network sniff, or physical access).
-2. Victim logs out. Session data is cleared, session_destroy is called.
-3. Attacker submits a request with the stolen cookie before PHP's garbage collector has cleaned up the old session file.
-4. Server either still recognises the ID or creates a new empty session under the old ID — attacker gains access.
+**Step-by-step attack:**
 
-This window is small but exploitable in a targeted attack where the attacker is watching for the logout.
+```
+Setup: Attacker has stolen victim's session cookie PHPSESSID=abc123
+(via XSS injection, packet sniff on HTTP, or brief physical device access)
+
+Attacker is watching the victim's activity.
+
+Step 1 — Victim clicks logout
+  POST /logout.php  Cookie: PHPSESSID=abc123
+  logout_user() runs:
+    $_SESSION = []           ← data wiped from server memory
+    session_destroy()        ← marks file for GC... but doesn't delete yet
+  Server responds: redirect to /login.php
+  Victim's browser deletes the cookie.
+
+Step 2 — Attacker immediately sends a request with the stolen cookie
+  GET /dashboard.php  Cookie: PHPSESSID=abc123
+  PHP looks for /tmp/sess_abc123 → STILL EXISTS (GC hasn't run yet)
+  PHP reads the file → data is [] (wiped) but session_start() succeeds
+  Depending on the application's require_login() logic:
+    - If it checks $_SESSION['user_id'] → fails → redirect
+    - If session_start() restores the session file → attacker gets an empty session
+  In some configurations, PHP recreates the session under the same ID.
+
+Step 3 — Race window
+  The attack window is the time between session_destroy() and GC running.
+  In high-traffic apps (GC runs often), this window is seconds.
+  In low-traffic apps (GC rarely runs), the old session file persists for minutes.
+```
+
+In a war-game where the attacker has already obtained the cookie and is actively monitoring, a seconds-wide window is exploitable — especially if they automate the replay immediately after detecting the logout redirect.
 
 #### How the Fix Prevents It
 
 ```php
-// ✅ After
-session_regenerate_id(true);   // ← old session file/record deleted NOW
+// ✅ After — session ID invalidated synchronously, not probabilistically
+session_regenerate_id(true);   // deletes /tmp/sess_abc123 RIGHT NOW
 $_SESSION = [];
 session_destroy();
 ```
 
-`session_regenerate_id(true)` with `delete_old_session = true` instructs PHP to **immediately delete** the old session file from the store and assign a new ID. The stolen cookie now references a session ID that no longer exists — any request with it will be rejected instantly, with zero race condition window.
+`session_regenerate_id(true)` with `true` (delete old session) calls the session handler's `destroy()` method **synchronously** — the old session file is deleted immediately as part of the regeneration, not deferred to GC. The stolen cookie `PHPSESSID=abc123` now references a file that no longer exists. Any request with it gets a brand new empty session — not the victim's data — with zero race condition window.
 
 ---
 
 ### A10 — Wrong Function Guard Causes Fatal Error During Hijack Detection; Stolen Sessions Survive
 
 **Severity:** 🟡 Medium  
-**Attack class:** Security Control Bypass via Code Error
+**Attack class:** Security Control Bypass via Code Error  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
-In `require_login()`, the IP mismatch handler (session hijack detection) contained a mismatched guard:
+`require_login()` detects session hijacking by comparing the IP stored at login with the IP on the current request. When a mismatch is found, it was supposed to log the event and destroy the session. The guard name and the called function name were different:
 
 ```php
-// ❌ Before — checks logActivity but calls logSecurityEvent
-if (function_exists('logActivity')) {
-    logSecurityEvent(LOG_SESSION_HIJACK, 'IP mismatch in require_login');
+// ❌ Before
+if (function_exists('logActivity')) {          // checks for logActivity
+    logSecurityEvent(LOG_SESSION_HIJACK, ...); // calls logSecurityEvent — different!
 }
+// ... then:
+session_unset();
+session_destroy();
+header('Location: /login.php');
 ```
 
 #### The Vulnerability
 
-`logActivity` and `logSecurityEvent` are different functions. In a scenario where `logger.php` is not loaded, or `logSecurityEvent` specifically is not defined:
+`logActivity` and `logSecurityEvent` are two different functions in `logger.php`. In a partial load scenario — where `logger.php` is included but only some of its functions are defined — or in any error state where `logSecurityEvent` is missing but `logActivity` is not:
 
-1. `function_exists('logActivity')` returns `true` (if `logActivity` is defined but `logSecurityEvent` is not).
-2. PHP proceeds to call `logSecurityEvent(...)`.
-3. **Fatal error:** `Call to undefined function logSecurityEvent()`.
-4. The request halts. The code that follows — `session_unset()`, `session_destroy()`, `header('Location: /login.php')` — **never executes**.
-5. The hijacked session stays alive.
+```
+function_exists('logActivity')    → true   (logActivity exists)
+logSecurityEvent(...)             → FATAL ERROR: Call to undefined function
 
-**Exploit pathway:**  
-An attacker who steals a session cookie and uses it from a different IP triggers the fingerprint/IP mismatch check. Under the right conditions (partial logger load), the fatal error fires, the session is not destroyed, the attacker retains access, and no hijack event is logged.
+PHP halts execution at the fatal error.
+The lines below never run:
+  session_unset();    ← SKIPPED
+  session_destroy();  ← SKIPPED
+  header('Location'); ← SKIPPED
+```
+
+The hijacked session is **not destroyed**. The attacker's stolen cookie remains valid.
+
+**Step-by-step exploit:**
+
+```
+Step 1 — Attacker steals victim's session cookie
+  Via XSS, HTTP sniff, or any other method.
+  Cookie: PHPSESSID=victim_session_id
+
+Step 2 — Attacker uses cookie from a different IP
+  Attacker is at IP 10.10.10.99
+  Victim logged in from 10.10.10.50
+  $_SESSION['ip'] = '10.10.10.50'  ← stored at login
+
+Step 3 — require_login() detects the mismatch
+  Current IP: 10.10.10.99 ≠ $_SESSION['ip']: 10.10.10.50
+  Mismatch detected. Code enters the hijack response block.
+
+Step 4 — Fatal error fires if logSecurityEvent is undefined
+  function_exists('logActivity') → true → enters the if block
+  logSecurityEvent() → FATAL ERROR
+  PHP stops. session_destroy() never runs.
+
+Step 5 — Attacker's next request still works
+  Session was never destroyed.
+  Attacker retains full authenticated access.
+  No hijack event was logged. Defenders see nothing.
+```
+
+The window where this is exploitable is whenever `logger.php` is partially loaded — which can happen due to include order bugs, fatal errors in other files, or autoload failures in high-load conditions.
 
 #### How the Fix Prevents It
 
 ```php
-// ✅ After — guard tests for the exact function being called
+// ✅ After — guard checks for the exact function being called
 if (function_exists('logSecurityEvent')) {
     logSecurityEvent(LOG_SESSION_HIJACK, 'IP mismatch in require_login');
 }
+// These always run, regardless of logger state:
+session_unset();
+session_destroy();
+header('Location: /login.php');
 ```
 
-If `logSecurityEvent` is missing, the block is skipped cleanly — no fatal error, no halt. Execution continues: the session is invalidated and the redirect fires. Security telemetry may be missing in that edge case, but the security control itself is no longer breakable.
+If `logSecurityEvent` is not defined, the guard correctly skips the block — no error, no halt. The session destruction and redirect always execute. In the worst case, the hijack detection fires without logging — but the session is destroyed and the attacker is ejected. The security control is no longer breakable by a logger state issue.
 
 ---
 
 ### A7 — `ensure_session_started()` Silent Failure Creates Undefined Session State
 
 **Severity:** 🟡 Medium (Hardening)  
-**Attack class:** Session Injection via Undefined State
+**Attack class:** Auth Guard Bypass via Silent Session Failure  
+**Status:** ✅ Fixed
 
 #### What Was Wrong
 
@@ -346,24 +565,54 @@ If `logSecurityEvent` is missing, the block is skipped cleanly — no fatal erro
 // ❌ Before
 function ensure_session_started(): void {
     if (session_status() !== PHP_SESSION_ACTIVE) {
-        require_once __DIR__ . '/../config/session.php';
-        // No check that session actually started after this
+        require_once __DIR__ . '/../config/session.php'; // no check after this
     }
+    // Returns silently whether session started or not
 }
 ```
 
-If `session.php` failed to call `session_start()` (e.g., due to headers-already-sent, file corruption, or missing config), the function returned silently. All subsequent code that reads or writes `$_SESSION` would operate on an uninitialised superglobal.
+This function is called at the top of every auth function — `login_user()`, `logout_user()`, `require_login()`. If it returned silently without a session actually starting, all subsequent `$_SESSION` reads and writes operated on an uninitialised superglobal.
 
 #### The Vulnerability
 
-In PHP, accessing `$_SESSION` without an active session doesn't crash — it reads from whatever happens to be in memory. In some edge cases (persistent CLI workers, shared memory backends), this means reading **another request's session data**. More commonly, it means session data is written but never persisted — authentication checks pass in memory for the current request but `$_SESSION['user_id']` is gone on the next request.
+**What PHP does when `$_SESSION` is accessed without an active session:**
 
-An attacker aware of this can craft requests that trigger the silent failure condition, causing the application to operate in a confused state where auth guards don't work correctly.
+In PHP, `$_SESSION` is a superglobal that is populated when `session_start()` is called. If you access it without ever calling `session_start()`, you don't get an error — you get an empty array. But crucially: any writes to it are **not persisted**. They exist only in memory for the current request and vanish when the request ends.
+
+**Scenario 1 — Headers already sent (most common):**
+
+```
+Some PHP file outputs a character (echo, BOM, whitespace before <?php)
+before session.php is included.
+session_start() inside session.php fails silently: 
+  Warning: session_start(): Cannot start session when headers already sent
+  (This is a warning, not a fatal — execution continues)
+
+ensure_session_started() returns. No exception. No stop.
+login_user() proceeds:
+  password_verify() → success
+  $_SESSION['user_id'] = 42    ← written to in-memory array
+  return true                  ← login appears successful
+
+Next request:
+  session_start() → starts a FRESH empty session (no persistent data)
+  require_login() → $_SESSION['user_id'] → undefined → redirect to login
+```
+
+The user is trapped in an authentication loop: every login appears to succeed but the session doesn't persist.
+
+**Scenario 2 — Attacker-triggerable (if they control a file include):**
+
+If the attacker can inject any output before session.php loads — via a path traversal that causes a file with a BOM to be included, or via a reflected error message — they can prevent `session_start()` from succeeding entirely, putting every subsequent request into a broken state where the application behaves unpredictably: sometimes passing auth checks based on stale memory, sometimes failing them.
+
+**Scenario 3 — Shared memory backends:**
+
+In persistent PHP workers (PHP-FPM, Swoole), `$_SESSION` may not be reinitialized between requests. Reading it without `session_start()` could return data from the *previous request's session* — potentially a different user's authenticated session data.
 
 #### How the Fix Prevents It
 
 ```php
-// ✅ After — throws on any failure
+// ✅ After — any failure is immediately visible, no silent continuation
 function ensure_session_started(): void {
     if (session_status() === PHP_SESSION_ACTIVE) { return; }
 
@@ -380,7 +629,93 @@ function ensure_session_started(): void {
 }
 ```
 
-Silent failure is eliminated. Any misconfiguration that would leave the session uninitialised now throws a `RuntimeException`, which creates a visible error log entry and a hard stop — the request never reaches auth-guarded code in a broken state.
+If session startup fails for any reason — missing file, headers already sent, storage failure — a `RuntimeException` is thrown. PHP logs it, and the request halts before any auth code runs. The application never reaches `$_SESSION['user_id']` in a broken state. The failure is loud and visible, not silent and exploitable.
+
+---
+
+### A12 — No Session ID Rotation on Login; Session Fixation Attack Possible
+
+**Severity:** 🔴 Critical  
+**File affected:** `includes/auth.php`  
+**Attack class:** Session Fixation  
+**Status:** ✅ Fixed
+
+#### What Was Wrong
+
+When a user successfully logged in, the server accepted the session ID the browser already had, populated it with authenticated data, and returned — without ever issuing a new session ID:
+
+```php
+// ❌ Before — no session_regenerate_id() on login
+clear_failed_attempts($pdo, $ip);
+
+$_SESSION['user_id']       = (int) $user['id'];
+$_SESSION['public_user_id'] = (string) $user['public_id'];
+$_SESSION['username']      = $user['username'];
+$_SESSION['ip']            = $ip;
+
+return true;
+```
+
+#### The Vulnerability
+
+**What session fixation is:**  
+PHP session IDs are normally generated by the server and sent to the browser as a cookie. But PHP also accepts a session ID the browser *already has* — including one the browser received elsewhere. If the server doesn't replace the ID at login, an attacker who places a known session ID into the victim's browser *before* login can authenticate the session remotely the moment the victim logs in.
+
+**Step-by-step attack:**
+
+```
+Step 1 — Attacker obtains a valid (unauthenticated) session ID
+  Attacker visits /login.php normally.
+  Server responds: Set-Cookie: PHPSESSID=a1b2c3d4e5f6  ← attacker knows this
+
+Step 2 — Attacker plants this ID in the victim's browser
+  Via XSS on any page:
+    document.cookie = "PHPSESSID=a1b2c3d4e5f6; path=/";
+  Or via a crafted link to a page that echoes the cookie.
+  Now victim's browser holds: PHPSESSID=a1b2c3d4e5f6
+
+Step 3 — Victim logs in normally
+  POST /login.php  Cookie: PHPSESSID=a1b2c3d4e5f6
+  Server verifies password — correct.
+  WITHOUT FIX: server writes to the existing session:
+    $_SESSION['user_id'] = 42;  // victim's account
+  Session ID is still a1b2c3d4e5f6.
+
+Step 4 — Attacker sends a request with the same ID
+  GET /dashboard.php  Cookie: PHPSESSID=a1b2c3d4e5f6
+  Server looks up session → user_id=42 → authenticated.
+  Attacker is inside the victim's account.
+  No password needed. No cookie theft needed.
+  The attacker simply waited for the victim to log in.
+```
+
+**Why `session.php`'s periodic rotation doesn't rescue this:**  
+`session.php` rotates the session ID every 5 minutes (`$regenInterval = 300`). But the attacker gets a window of up to 5 minutes after login — plenty of time to transfer funds, exfiltrate data, or change account details. In a war-game with fast-moving players, 5 minutes is the whole match.
+
+#### How the Fix Prevents It
+
+`session_regenerate_id(true)` is called immediately after a successful password verification, before any session data is written:
+
+```php
+// ✅ After — FIX: A12
+clear_failed_attempts($pdo, $ip);
+
+/* Prevent session fixation — old ID deleted, new random ID issued */
+session_regenerate_id(true);
+
+$_SESSION['user_id']       = (int) $user['id'];
+$_SESSION['public_user_id'] = (string) $user['public_id'];
+$_SESSION['username']      = $user['username'];
+$_SESSION['ip']            = $ip;
+
+return true;
+```
+
+`session_regenerate_id(true)` does two things atomically:
+1. Generates a fresh cryptographically random session ID
+2. Deletes the old session file/record immediately (`true` = delete old session)
+
+The attacker's planted ID now points to a deleted session. Even if the victim just logged in using that ID, the server has thrown it away and issued a new one — one the attacker doesn't know. Their wait was wasted.
 
 ---
 
