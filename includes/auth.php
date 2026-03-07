@@ -1,19 +1,13 @@
-﻿<?php
-declare(strict_types=1);
-
+<?php
 require_once __DIR__ . '/sanitize.php';
 require_once __DIR__ . '/../config/session.php';
 
-/*
-|--------------------------------------------------------------------------
-| Security constants
-|--------------------------------------------------------------------------
-*/
+/* |-------------------------------------------------------------------------- | Security constants |-------------------------------------------------------------------------- */
 const LOGIN_DELAY_MIN_US = 250000; // 0.25s
 const LOGIN_DELAY_MAX_US = 400000; // 0.40s
 const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_SECONDS = 300;    // 5 minute lockout
-const ATTEMPT_WINDOW = 900;    // reset attempt count after 15 min of inactivity
+const LOCKOUT_SECONDS = 300; // 5 minute lockout
+const ATTEMPT_WINDOW = 900; // reset attempt count after 15 min of inactivity
 
 /*
  * Real bcrypt hash used when user is missing.
@@ -26,11 +20,7 @@ const DUMMY_HASH =
     '$2y$12$KIXsvMrxRbLQn5oTMHuSPOY/hGKPSfLpFBG7GiKVcI5Fg2NeRRdYu';
 
 
-/*
-|--------------------------------------------------------------------------
-| Ensure session exists safely
-|--------------------------------------------------------------------------
-*/
+/* |-------------------------------------------------------------------------- | Ensure session exists safely |-------------------------------------------------------------------------- */
 function ensure_session_started(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -50,12 +40,7 @@ function ensure_session_started(): void
 }
 
 
-/*
-|--------------------------------------------------------------------------
-| IP-based rate limiting (DB-backed)
-| Keyed by IP - clearing cookies does NOT reset this.
-|--------------------------------------------------------------------------
-*/
+/* |-------------------------------------------------------------------------- | IP-based rate limiting (DB-backed) | Keyed by IP - clearing cookies does NOT reset this. |-------------------------------------------------------------------------- */
 function is_ip_locked(PDO $pdo, string $ip): bool
 {
     $now = time();
@@ -100,12 +85,12 @@ function record_failed_attempt(PDO $pdo, string $ip): void
                            ),
             last_attempt = :now
     ")->execute([
-                'ip' => $ip,
-                'now' => $now,
-                'window' => $now - ATTEMPT_WINDOW,
-                'max' => MAX_LOGIN_ATTEMPTS,
-                'lockout' => LOCKOUT_SECONDS,
-            ]);
+        'ip' => $ip,
+        'now' => $now,
+        'window' => $now - ATTEMPT_WINDOW,
+        'max' => MAX_LOGIN_ATTEMPTS,
+        'lockout' => LOCKOUT_SECONDS,
+    ]);
 }
 
 function clear_failed_attempts(PDO $pdo, string $ip): void
@@ -132,19 +117,7 @@ function get_lockout_remaining(PDO $pdo, string $ip): int
 }
 
 
-/*
-|--------------------------------------------------------------------------
-| Register user
-|--------------------------------------------------------------------------
-| Returns:
-|   true        -> success
-|   'duplicate' -> username/email exists
-|   false       -> validation or unexpected failure
-|
-| Duplicate detection is handled atomically by the DB UNIQUE constraint,
-| avoiding the TOCTOU race condition of a pre-check SELECT.
-|--------------------------------------------------------------------------
-*/
+/* |-------------------------------------------------------------------------- | Register user |-------------------------------------------------------------------------- | Returns: |   true        -> success |   'duplicate' -> username/email exists |   false       -> validation or unexpected failure | | Duplicate detection is handled atomically by the DB UNIQUE constraint, | avoiding the TOCTOU race condition of a pre-check SELECT. |-------------------------------------------------------------------------- */
 function generate_uuid_v4(): string
 {
     $data = random_bytes(16);
@@ -163,9 +136,9 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
     }
 
     if (
-        !validate_username($username) ||
-        !validate_email($email) ||
-        !validate_password($password)
+    !validate_username($username) ||
+    !validate_email($email) ||
+    !validate_password($password)
     ) {
         return false;
     }
@@ -191,7 +164,8 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
 
         return true;
 
-    } catch (PDOException $e) {
+    }
+    catch (PDOException $e) {
         // SQLSTATE 23000 = integrity constraint violation (duplicate key)
         if ($e->getCode() === '23000') {
             // Adding this
@@ -207,23 +181,7 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
 }
 
 
-/*
-|--------------------------------------------------------------------------
-| Login user
-|--------------------------------------------------------------------------
-| Returns:
-|   true     -> success
-|   'locked' -> IP is rate-limited
-|   false    -> invalid credentials
-|
-| Security:
-| - DB-backed IP rate limiting (cookie-clearing resistant)
-| - Anti-enumeration timing protection
-| - Randomized brute-force delay
-| - Session fixation prevention
-| - Session IP binding
-|--------------------------------------------------------------------------
-*/
+/* |-------------------------------------------------------------------------- | Login user |-------------------------------------------------------------------------- | Returns: |   true     -> success |   'locked' -> IP is rate-limited |   false    -> invalid credentials | | Security: | - DB-backed IP rate limiting (cookie-clearing resistant) | - Anti-enumeration timing protection | - Randomized brute-force delay | - Session fixation prevention | - Session IP binding |-------------------------------------------------------------------------- */
 function login_user(PDO $pdo, string $identifier, string $password): bool|string
 {
     ensure_session_started();
@@ -254,7 +212,8 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
             WHERE email = :id
             LIMIT 1
         ";
-    } else {
+    }
+    else {
         $sql = "
             SELECT id, public_id, username, password_hash
             FROM users
@@ -295,8 +254,8 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     /* Prevent session fixation */
     session_regenerate_id(true);
 
-    $_SESSION['user_id'] = (int) $user['id'];
-    $_SESSION['public_user_id'] = (string) $user['public_id'];
+    $_SESSION['user_id'] = (int)$user['id'];
+    $_SESSION['public_user_id'] = (string)$user['public_id'];
     $_SESSION['username'] = $user['username'];
 
     /*
@@ -312,11 +271,7 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
 }
 
 
-/*
-|--------------------------------------------------------------------------
-| Require login
-|--------------------------------------------------------------------------
-*/
+/* |-------------------------------------------------------------------------- | Require login |-------------------------------------------------------------------------- */
 function require_login(): void
 {
     ensure_session_started();
@@ -324,7 +279,7 @@ function require_login(): void
 
     if (!isset($_SESSION['user_id'])) {
         if (function_exists('logActivity')) {
-            logActivity(LOG_ACCESS_DENIED);  // who tried to access without login
+            logActivity(LOG_ACCESS_DENIED); // who tried to access without login
         }
         header('Location: /login.php');
         exit;
@@ -351,11 +306,7 @@ function require_login(): void
     }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Public ID helpers for search + transfer modules
-|--------------------------------------------------------------------------
-*/
+/* |-------------------------------------------------------------------------- | Public ID helpers for search + transfer modules |-------------------------------------------------------------------------- */
 function resolve_user_id_from_public_id(PDO $pdo, string $publicId): ?int
 {
     // $publicId = sanitize_public_user_id($publicId);   Rename it - Change 7
@@ -378,7 +329,7 @@ function resolve_user_id_from_public_id(PDO $pdo, string $publicId): ?int
         return null;
     }
 
-    return (int) $row['id'];
+    return (int)$row['id'];
 }
 
 function get_user_by_public_id(PDO $pdo, string $publicId): ?array
@@ -433,20 +384,17 @@ function logout_user(): void
         setcookie(
             session_name(),
             '',
-            [
-                'expires' => time() - 42000,
-                'path' => $params['path'],
-                'domain' => $params['domain'],
-                'secure' => $params['secure'],
-                'httponly' => $params['httponly'],
-                'samesite' => $params['samesite'] ?? 'Lax',
-            ]
+        [
+            'expires' => time() - 42000,
+            'path' => $params['path'],
+            'domain' => $params['domain'],
+            'secure' => $params['secure'],
+            'httponly' => $params['httponly'],
+            'samesite' => $params['samesite'] ?? 'Lax',
+        ]
         );
     }
 
     // Destroy server side session
     session_destroy();
 }
-
-
-
