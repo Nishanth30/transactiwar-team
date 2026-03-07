@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $safe_filename = sanitize_filename($file['name']);
                 
                 // Defense 4: Obfuscated Storage Name (Kills Data Enumeration)
-                $final_filename = 'avatar_' . time() . '_' . rand(1000, 9999) . '_' . $safe_filename;
+                $final_filename = 'avatar_' . bin2hex(random_bytes(16)) . '_' . $safe_filename;
                 
                 $upload_dir = __DIR__ . '/../public/uploads/';
                 if (!is_dir($upload_dir)) {
