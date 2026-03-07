@@ -1,12 +1,16 @@
-<?php 
+<?php
+
 // 1. Boot up the engine 
-require_once __DIR__ . '/../includes/profile_view_logic.php'; 
+require_once __DIR__ . '/../includes/profile_view_logic.php';
+
 
 // 2. Activate the HTTP Security Headers
 if (file_exists(__DIR__ . '/../includes/header.php')) {
     require_once __DIR__ . '/../includes/header.php';
-    send_security_headers(); 
-} else {
+    send_security_headers();
+
+}
+else {
     echo "<!DOCTYPE html><html><head><title>Agent Profile</title></head><body>";
 }
 ?>
@@ -20,7 +24,7 @@ if (file_exists(__DIR__ . '/../includes/header.php')) {
         Public Agent ID: <?php echo $profileData['uuid']; ?>
     </p>
     
-    <img src="uploads/<?php echo $profileData['image']; ?>" width="150" style="border-radius: 8px;" alt="Profile Pic">
+    <img src="serve_image.php?file=<?php echo $profileData['image']; ?>" width="150" style="border-radius: 8px;" alt="Profile Pic">
     
     <div style="margin-top: 20px; padding: 15px; background: #f4f4f4; border-radius: 5px;">
         <h3>Operational Bio</h3>
@@ -37,11 +41,13 @@ if (file_exists(__DIR__ . '/../includes/header.php')) {
         
         <a href="profile.php" style="padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">Edit My Profile</a>
         
-    <?php else: ?>
+    <?php
+else: ?>
         
         <a href="payment_page.php?target_uuid=<?php echo $profileData['uuid']; ?>" style="padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px;">Initiate Transfer to Agent</a>
         
-    <?php endif; ?>
+    <?php
+endif; ?>
 
 </div>
 

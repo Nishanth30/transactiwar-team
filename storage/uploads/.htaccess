@@ -1,0 +1,3 @@
+# Block ALL direct web access to this directory.
+# Profile images must be served through public/serve_image.php only.
+Require all denied
