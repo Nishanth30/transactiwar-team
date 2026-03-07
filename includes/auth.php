@@ -34,7 +34,7 @@ const DUMMY_HASH =
 function ensure_session_started(): void
 {
     if (session_status() !== PHP_SESSION_ACTIVE) {
-        require_once __DIR__ . '/session.php';
+        require_once __DIR__ . '/../config/session.php'; // FIX: A1
     }
 }
 
@@ -415,3 +415,4 @@ function logout_user(): void
     // Destroy server side session
     session_destroy();
 }
+
