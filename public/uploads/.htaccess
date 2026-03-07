@@ -1,0 +1,8 @@
+# 🆕 RED TEAM FIX (V3): Disable execution of any script files in the uploads directory
+<FilesMatch "\.(php|php[0-9]|phtml|phar|cgi|pl|py)$">
+    Require all denied
+</FilesMatch>
+
+# Force scripts to be served as plain text just in case
+Options -ExecCGI
+AddType text/plain .php .php5 .phtml .phar
