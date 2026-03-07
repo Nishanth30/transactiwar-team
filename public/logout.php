@@ -3,11 +3,13 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../config/db.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
-    session_unset();
-    session_destroy();
+    logout_user();  // session_regenerate_id(true) + cookie deletion + logging
     header('Location: /login.php');
     exit;
 }

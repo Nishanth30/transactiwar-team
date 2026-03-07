@@ -1,8 +1,6 @@
 <?php
 
 declare(strict_types=1);
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 require_once __DIR__ . '/../includes/header.php';
 send_security_headers();
 
@@ -33,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         verifyCsrf();
 
         $usernameOrEmail = post_str('identifier');
-        $password        = $_POST['password'] ?? '';
+        $password = $_POST['password'] ?? '';
 
         if ($usernameOrEmail === '' || $password === '') {
             $error = 'All fields are required.';
@@ -74,40 +72,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Login</title>
     <?= csrfMeta() ?>
 </head>
+
 <body>
 
-<h2>Login</h2>
+    <h2>Login</h2>
 
-<?php if ($error !== ''): ?>
-    <p style="color:red;">
-        <?= escape_output($error) ?>
-    </p>
-<?php endif; ?>
+    <?php if ($error !== ''): ?>
+        <p style="color:red;">
+            <?= escape_output($error) ?>
+        </p>
+    <?php endif; ?>
 
-<form method="POST" action="">
-    <?= csrfField() ?>
+    <form method="POST" action="">
+        <?= csrfField() ?>
 
-    <label>
-        Username or Email:
-        <input type="text" name="identifier" required>
-    </label>
-    <br><br>
+        <label>
+            Username or Email:
+            <input type="text" name="identifier" required>
+        </label>
+        <br><br>
 
-    <label>
-        Password:
-        <input type="password" name="password" required>
-    </label>
-    <br><br>
+        <label>
+            Password:
+            <input type="password" name="password" required>
+        </label>
+        <br><br>
 
-    <button type="submit">Login</button>
-</form>
+        <button type="submit">Login</button>
+    </form>
 
-<a href="/register.php">Go to Register</a>
+    <a href="/register.php">Go to Register</a>
 
 </body>
+
 </html>

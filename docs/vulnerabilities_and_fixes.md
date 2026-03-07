@@ -1143,10 +1143,123 @@ If Transfer A→B locks ids 10 then 20, Transfer B→A now *also* locks ids 10 t
 
 ---
 
+### V1 — `logout.php` Bypasses `logout_user()`; Stolen Cookies Survive Logout
+
+**Severity:** 🔴 Critical  
+**Attack class:** Post-Logout Session Persistence / Cookie Replay  
+**Status:** ✅ Fixed  
+**File:** `public/logout.php`
+
+#### What Was Wrong
+
+```php
+// ❌ Before
+require_once __DIR__ . '/../config/session.php';
+require_once __DIR__ . '/../includes/csrf.php';
+// auth.php never imported — logout_user() never called
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
+    session_unset();
+    session_destroy();  // does NOT invalidate the session ID
+    header('Location: /login.php');
+    exit;
+}
+```
+
+#### The Vulnerability
+
+`session_destroy()` deletes session data but **the session ID itself is never rotated**. The stolen cookie `PHPSESSID=abc123` remains valid until PHP's garbage collector randomly cleans up the file (default: 1% chance per request).
+
+**Step-by-step attack:**
+```
+1. Attacker steals victim's session cookie via XSS or network sniff
+2. Victim notices and logs out → server calls session_destroy()
+3. Victim feels safe, logs back in (new session created)
+4. Attacker replays OLD cookie PHPSESSID=abc123 → server still accepts it
+5. Attacker transfers victim's balance
+```
+
+#### How the Fix Prevents It
+
+```php
+// ✅ After
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../config/db.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
+    logout_user();  // calls session_regenerate_id(true) — old session file deleted immediately
+    header('Location: /login.php');
+    exit;
+}
+```
+
+`logout_user()` calls `session_regenerate_id(true)` which **immediately deletes** the old session file on disk. The stolen `PHPSESSID=abc123` is dead the instant the victim logs out.
+
+---
+
+### V6 — `display_errors = 1` in `login.php` Leaks Internal File Paths
+
+**Severity:** 🟠 High  
+**Attack class:** Information Disclosure / Recon  
+**Status:** ✅ Fixed  
+**File:** `public/login.php`
+
+#### What Was Wrong
+
+```php
+// ❌ Before
+declare(strict_types=1);
+ini_set('display_errors', 1);   // sends PHP errors to the browser
+error_reporting(E_ALL);         // reports every type of error
+```
+
+#### The Vulnerability
+
+With `display_errors` on, any PHP error (type mismatch, missing file, bad DB query) outputs the full error to the browser response body:
+
+```
+Fatal error: Uncaught PDOException: SQLSTATE[42000] ...
+in /var/www/html/config/db.php on line 12
+Stack trace:
+#0 /var/www/html/config/db.php(12): PDO->__construct(...)
+#1 /var/www/html/public/login.php(13): require_once(...)
+```
+
+**What an attacker learns without source code access:**
+- Exact absolute file paths on the server (`/var/www/html/...`)
+- Which PHP version is running (error format reveals it)
+- Which database driver and version (PDO error messages)
+- Internal application structure (which files include which)
+- Where to target path traversal or LFI attempts
+
+**Attack procedure:**
+```
+1. Attacker sends malformed POST to /login.php (e.g. array instead of string)
+2. PHP throws a type error: "Expected string, got array in auth.php on line 244"
+3. Attacker now knows the internal file structure
+4. Attacker cross-references with known PHP/PDO CVEs for that version
+5. Attacker crafts targeted exploit against the revealed infrastructure
+```
+
+#### How the Fix Prevents It
+
+```php
+// ✅ After — both lines simply removed
+declare(strict_types=1);
+require_once __DIR__ . '/../includes/header.php';
+```
+
+Errors are still logged to the server's error log (visible in `docker logs app`), so developers can debug — attackers just can't see them. PHP's default (`display_errors = Off`) is already applied by the Dockerfile.
+
+---
+
 ## Summary Table
 
 | Fix | Severity | File(s) | Attack Prevented |
-|-----|----------|---------|-----------------|
+|-----|----------|---------|-----------------| 
 | A2 | 🔴 Critical | `auth.php` | Financial data / email mass enumeration |
 | A3+A4 | 🔴 Critical | `auth.php` | Auth bypass via truthy lockout + blind brute force |
 | A5 | 🔴 Critical | `auth.php` | Session survives logout / CSRF forced logout |
@@ -1161,3 +1274,5 @@ If Transfer A→B locks ids 10 then 20, Transfer B→A now *also* locks ids 10 t
 | C1.3 | 🔴 Critical | `session.php` | Shared-network fingerprint forgery for session hijack |
 | C2.1 | 🔴 Critical | `process_payment.php` | Integer overflow bypasses insufficient-funds guard |
 | C2.2 | 🔴 Critical | `process_payment.php` | Deadlock injection denies service to payment system |
+| V1 | 🔴 Critical | `logout.php` | Stolen cookie survives logout — session ID not rotated |
+| V6 | 🟠 High | `login.php` | PHP error traces leaked to browser enabling recon |
