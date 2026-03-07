@@ -85,12 +85,12 @@ function record_failed_attempt(PDO $pdo, string $ip): void
                            ),
             last_attempt = :now
     ")->execute([
-        'ip' => $ip,
-        'now' => $now,
-        'window' => $now - ATTEMPT_WINDOW,
-        'max' => MAX_LOGIN_ATTEMPTS,
-        'lockout' => LOCKOUT_SECONDS,
-    ]);
+                'ip' => $ip,
+                'now' => $now,
+                'window' => $now - ATTEMPT_WINDOW,
+                'max' => MAX_LOGIN_ATTEMPTS,
+                'lockout' => LOCKOUT_SECONDS,
+            ]);
 }
 
 function clear_failed_attempts(PDO $pdo, string $ip): void
@@ -136,9 +136,9 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
     }
 
     if (
-    !validate_username($username) ||
-    !validate_email($email) ||
-    !validate_password($password)
+        !validate_username($username) ||
+        !validate_email($email) ||
+        !validate_password($password)
     ) {
         return false;
     }
@@ -164,8 +164,7 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
 
         return true;
 
-    }
-    catch (PDOException $e) {
+    } catch (PDOException $e) {
         // SQLSTATE 23000 = integrity constraint violation (duplicate key)
         if ($e->getCode() === '23000') {
             // Adding this
@@ -212,8 +211,7 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
             WHERE email = :id
             LIMIT 1
         ";
-    }
-    else {
+    } else {
         $sql = "
             SELECT id, public_id, username, password_hash
             FROM users
@@ -254,8 +252,8 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     /* Prevent session fixation */
     session_regenerate_id(true);
 
-    $_SESSION['user_id'] = (int)$user['id'];
-    $_SESSION['public_user_id'] = (string)$user['public_id'];
+    $_SESSION['user_id'] = (int) $user['id'];
+    $_SESSION['public_user_id'] = (string) $user['public_id'];
     $_SESSION['username'] = $user['username'];
 
     /*
@@ -329,7 +327,7 @@ function resolve_user_id_from_public_id(PDO $pdo, string $publicId): ?int
         return null;
     }
 
-    return (int)$row['id'];
+    return (int) $row['id'];
 }
 
 function get_user_by_public_id(PDO $pdo, string $publicId): ?array
@@ -384,14 +382,14 @@ function logout_user(): void
         setcookie(
             session_name(),
             '',
-        [
-            'expires' => time() - 42000,
-            'path' => $params['path'],
-            'domain' => $params['domain'],
-            'secure' => $params['secure'],
-            'httponly' => $params['httponly'],
-            'samesite' => $params['samesite'] ?? 'Lax',
-        ]
+            [
+                'expires' => time() - 42000,
+                'path' => $params['path'],
+                'domain' => $params['domain'],
+                'secure' => $params['secure'],
+                'httponly' => $params['httponly'],
+                'samesite' => $params['samesite'] ?? 'Lax',
+            ]
         );
     }
 
