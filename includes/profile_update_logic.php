@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $raw_input_bio = htmlspecialchars_decode($_POST['bio'] ?? '', ENT_QUOTES);
     $new_bio = sanitize_bio($raw_input_bio);
 
-    // C. FILE UPLOAD DEFENSE MATRIX (The RCE Killer)
+    // C. FILE UPLOAD DEFENSE MATRIX (The RCE & Bomb Killer)
     $image_path_query = "";
     $bind_params = [':bio' => $new_bio, ':id' => $user_id];
     $new_file_destination = null;
@@ -40,93 +40,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
         $file = $_FILES['profile_image'];
 
-        // Defense 1: Hard Size Limit (2MB max) to prevent DOS
         if ($file['size'] > 2097152) {
             $error_message = "File is too large. Maximum size is 2MB.";
-            // 🆕 ADDED: Ring the alarm for oversized files
             logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "File exceeded 2MB limit"); 
         } else {
-            // Defense 2: True MIME Type Check (Don't trust the browser)
             $finfo = new finfo(FILEINFO_MIME_TYPE);
             $mime_type = $finfo->file($file['tmp_name']);
             $allowed_mimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
             if (!in_array($mime_type, $allowed_mimes, true)) {
-                $error_message = "Invalid file format. Only JPG, PNG, GIF, and WEBP are allowed.";
-                // 🆕 ADDED: Ring the alarm for hacking attempts (fake images)
+                $error_message = "Invalid file format.";
                 logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "Invalid MIME type: " . $mime_type); 
             } else {
-                // Defense 3: Secure Extension & Filename (Kills Directory Traversal)
-                $safe_filename = sanitize_filename($file['name']);
-                
-                // Defense 4: Obfuscated Storage Name (Kills Data Enumeration)
-                $final_filename = 'avatar_' . bin2hex(random_bytes(16)) . '_' . $safe_filename;
-                
-                $upload_dir = __DIR__ . '/../public/uploads/';
-                if (!is_dir($upload_dir)) {
-                    mkdir($upload_dir, 0755, true);
-                }
-
-                $new_file_destination = $upload_dir . $final_filename;
-
-                // Move the file out of temporary storage
-                // Move the file out of temporary storage
-                if (move_uploaded_file($file['tmp_name'], $new_file_destination)) {
-                    
-                    // 🆕 RED TEAM FIX (E3): Re-process image to strip hidden PHP polyglot code
-                    // This uses your $mime_type variable from Defense 2
-                    $reprocess_success = false;
-                    if ($mime_type === 'image/jpeg') {
-                        $img = @imagecreatefromjpeg($new_file_destination);
-                        if ($img) { $reprocess_success = imagejpeg($img, $new_file_destination, 90); imagedestroy($img); }
-                    } elseif ($mime_type === 'image/png') {
-                        $img = @imagecreatefrompng($new_file_destination);
-                        if ($img) { $reprocess_success = imagepng($img, $new_file_destination); imagedestroy($img); }
-                    } elseif ($mime_type === 'image/gif') {
-                        $img = @imagecreatefromgif($new_file_destination);
-                        if ($img) { $reprocess_success = imagegif($img, $new_file_destination); imagedestroy($img); }
-                    }
-
-                    if ($reprocess_success) {
-                        $image_path_query = ", profile_image_path = :img";
-                        $bind_params[':img'] = $final_filename;
-                    } else {
-                        unlink($new_file_destination); // Delete the potentially malicious/corrupt file
-                        $error_message = "System error: Failed to process secure image.";
-                        logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "Image re-processing failed (potential polyglot blocked)");
-                    }
+                // 🆕 RED TEAM FIX (C3): The Decompression Bomb Check
+                // Read the image dimensions BEFORE loading it into RAM
+                $image_info = @getimagesize($file['tmp_name']);
+                if ($image_info === false || $image_info[0] > 4000 || $image_info[1] > 4000) {
+                    $error_message = "Image dimensions too large. Max 4000x4000 pixels.";
+                    logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "Decompression bomb prevented");
                 } else {
-                    $error_message = "System error: Failed to save the image.";
+                    $safe_filename = sanitize_filename($file['name']);
+                    $final_filename = 'avatar_' . bin2hex(random_bytes(16)) . '_' . $safe_filename;
+                    $upload_dir = __DIR__ . '/../public/uploads/';
+                    if (!is_dir($upload_dir)) { mkdir($upload_dir, 0755, true); }
+                    $new_file_destination = $upload_dir . $final_filename;
+
+                    if (move_uploaded_file($file['tmp_name'], $new_file_destination)) {
+                        // Safe to re-process now that we know dimensions are small
+                        $reprocess_success = false;
+                        if ($mime_type === 'image/jpeg') {
+                            $img = @imagecreatefromjpeg($new_file_destination);
+                            if ($img) { $reprocess_success = imagejpeg($img, $new_file_destination, 90); imagedestroy($img); }
+                        } elseif ($mime_type === 'image/png') {
+                            $img = @imagecreatefrompng($new_file_destination);
+                            if ($img) { $reprocess_success = imagepng($img, $new_file_destination); imagedestroy($img); }
+                        } elseif ($mime_type === 'image/gif') {
+                            $img = @imagecreatefromgif($new_file_destination);
+                            if ($img) { $reprocess_success = imagegif($img, $new_file_destination); imagedestroy($img); }
+                        } elseif ($mime_type === 'image/webp') {
+                            $img = @imagecreatefromwebp($new_file_destination);
+                            if ($img) { $reprocess_success = imagewebp($img, $new_file_destination, 90); imagedestroy($img); }
+                        }
+
+                        if ($reprocess_success) {
+                            $image_path_query = ", profile_image_path = :img";
+                            $bind_params[':img'] = $final_filename;
+                        } else {
+                            unlink($new_file_destination); 
+                            $error_message = "System error: Failed to process secure image.";
+                        }
+                    } else {
+                        $error_message = "System error: Failed to save the image.";
+                    }
                 }
             }
         }
     }
 
-    // D. DATABASE UPDATE & STORAGE CLEANUP
+    // D. DATABASE UPDATE & STRICT STORAGE CLEANUP
     if (empty($error_message)) {
         try {
-            // 🆕 RED TEAM FIX (E2): Transaction with row-locking to serialize concurrent uploads
             $pdo->beginTransaction();
 
-            // 1. Lock the row and get the TRULY current image right at this exact millisecond
+            // Lock the row to prevent the race condition
             $lock_stmt = $pdo->prepare("SELECT profile_image_path FROM users WHERE id = :id FOR UPDATE");
             $lock_stmt->execute([':id' => $user_id]);
             $real_old_image = $lock_stmt->fetchColumn();
 
-            // 2. Execute the update
+            // Execute the update
             $sql = "UPDATE users SET bio = :bio" . $image_path_query . " WHERE id = :id";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($bind_params);
             
-            // 3. Commit the transaction (releases the lock for the next thread in line)
-            $pdo->commit();
-            
-            $update_success = true;
-
-            // Log the successful profile update for the audit trail
-            logActivity(LOG_PROFILE_UPDATE); 
-
-            // Defense 5: Storage Exhaustion Cleanup (Now using the strictly locked old image)
+            // 🆕 RED TEAM FIX (C1): Delete the old file WHILE the database is locked.
+            // This guarantees no other thread can sneak in and orphan a file.
             if ($new_file_destination !== null && $real_old_image) {
                 $old_file_full_path = __DIR__ . '/../public/uploads/' . basename($real_old_image);
                 if (file_exists($old_file_full_path) && is_file($old_file_full_path)) {
@@ -134,22 +121,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Refresh the current data so the UI updates immediately
+            // Now release the lock
+            $pdo->commit();
+            $update_success = true;
+            logActivity(LOG_PROFILE_UPDATE); 
+
             $stmt = $pdo->prepare("SELECT bio, profile_image_path FROM users WHERE id = :id LIMIT 1");
             $stmt->execute([':id' => $user_id]);
             $current_user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         } catch (PDOException $e) {
-            // Safety net: Rollback if the transaction failed midway
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            
-            // Info Disclosure Defense: Log the real error, show a generic one
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
             error_log("Profile Update Error: " . $e->getMessage());
             $error_message = "A database error occurred while saving your profile.";
-            
-            // If the DB failed but we moved the file, delete the orphaned file
             if ($new_file_destination !== null && file_exists($new_file_destination)) {
                 unlink($new_file_destination);
             }
