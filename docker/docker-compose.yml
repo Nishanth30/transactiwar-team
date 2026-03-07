@@ -73,6 +73,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in docker/.env}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-app_database}
       APP_DIAGNOSTIC_MODE: ${APP_DIAGNOSTIC_MODE:-0}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in docker/.env}
     volumes:
       - ../:/var/www/html:ro
       - ./.env.example:/var/www/html/docker/.env:ro

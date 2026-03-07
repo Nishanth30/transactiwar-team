@@ -59,7 +59,13 @@ $regenInterval = 300;    // rotate ID every 5 minutes
 // FIX: C1.3 — server secret makes fingerprint uncomputable by external parties
 // even if they know the victim's User-Agent and IP (e.g. shared NAT / LAN)
 // SESSION_SECRET must be set in .env as a long random string (min 32 chars)
-$_fingerprintSecret = $_ENV['SESSION_SECRET'] ?? 'fallback-change-in-production';
+$_fingerprintSecret = $_ENV['SESSION_SECRET'] ?? null;
+if ($_fingerprintSecret === null || strlen($_fingerprintSecret) < 32) {
+    // Hard fail — running without a session secret is a critical misconfiguration.
+    // Set SESSION_SECRET in your .env file (min 32 random chars).
+    http_response_code(500);
+    die('Server misconfiguration: SESSION_SECRET not set.');
+}
 
 $currentFingerprint = hash(
     'sha256',
