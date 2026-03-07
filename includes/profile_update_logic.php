@@ -70,9 +70,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $new_file_destination = $upload_dir . $final_filename;
 
                 // Move the file out of temporary storage
+                // Move the file out of temporary storage
                 if (move_uploaded_file($file['tmp_name'], $new_file_destination)) {
-                    $image_path_query = ", profile_image_path = :img";
-                    $bind_params[':img'] = $final_filename;
+                    
+                    // 🆕 RED TEAM FIX (E3): Re-process image to strip hidden PHP polyglot code
+                    // This uses your $mime_type variable from Defense 2
+                    $reprocess_success = false;
+                    if ($mime_type === 'image/jpeg') {
+                        $img = @imagecreatefromjpeg($new_file_destination);
+                        if ($img) { $reprocess_success = imagejpeg($img, $new_file_destination, 90); imagedestroy($img); }
+                    } elseif ($mime_type === 'image/png') {
+                        $img = @imagecreatefrompng($new_file_destination);
+                        if ($img) { $reprocess_success = imagepng($img, $new_file_destination); imagedestroy($img); }
+                    } elseif ($mime_type === 'image/gif') {
+                        $img = @imagecreatefromgif($new_file_destination);
+                        if ($img) { $reprocess_success = imagegif($img, $new_file_destination); imagedestroy($img); }
+                    }
+
+                    if ($reprocess_success) {
+                        $image_path_query = ", profile_image_path = :img";
+                        $bind_params[':img'] = $final_filename;
+                    } else {
+                        unlink($new_file_destination); // Delete the potentially malicious/corrupt file
+                        $error_message = "System error: Failed to process secure image.";
+                        logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "Image re-processing failed (potential polyglot blocked)");
+                    }
                 } else {
                     $error_message = "System error: Failed to save the image.";
                 }
