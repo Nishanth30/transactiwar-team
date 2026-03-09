@@ -11,90 +11,97 @@ require_once __DIR__ . '/../config/db.php';
 
 require_login();
 
-include("header.html");
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Search Users</title>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        #searchbar { width: 300px; padding: 8px; font-size: 16px; }
-        .results-container { margin-top: 20px; width: 300px; border: 1px solid #ccc; }
-        .result-item { display: block; padding: 8px; border-top: 1px solid #eee; text-decoration: none; color: black; }
-        .result-item:hover { background-color: #f2f2f2; }
-    </style>
+    <title>Transactiwar | Search Users</title>
 </head>
+
 <body>
 
-<h2>Search Users</h2>
+    <?php include("header.html"); ?>
 
-<form method="GET" action="">
-    <!-- No CSRF token on GET forms — tokens in URLs leak via logs/history/Referer -->
-    <input type="text" name="q" id="searchbar" placeholder="Search users...">
-    <button type="submit">Search</button>
-</form>
+    <div class="container">
+        <div class="card">
+            <h2 class="text-glow">Search Users</h2>
 
-<div class="results-container">
-<?php
+            <form method="GET" action="" style="flex-direction: row; align-items: flex-end;">
+                <!-- No CSRF token on GET forms — tokens in URLs leak via logs/history/Referer -->
+                <div style="flex: 1;">
+                    <input type="text" name="q" id="searchbar" placeholder="Enter username...">
+                </div>
+                <button type="submit" class="btn-primary" style="margin-top:0;">Search</button>
+            </form>
 
-
-$query = sanitize_search(get_str('q'));
-
-if (!is_empty_input($query)) {
-    logActivity(LOG_SEARCH);
-
-    // $searchTerm = "%" . $query . "%";
-    $searchTerm = $query;
-
-    // Check PDO is available
-    if (!isset($pdo) || $pdo === null) {
-        die("<p style='color:red;'>Database connection failed.</p>");
-    }
-
-    $stmt = $pdo->prepare("
-        SELECT username, public_id 
-        FROM users 
-        WHERE username = :search1 OR public_id = :search2
-        LIMIT 32
-    ");
+            <div class="results-container mt-4">
+                <?php
 
 
-    if (!$stmt) {
-        die("<p style='color:red;'>Query prepare failed.</p>");
-    }
+                $query = sanitize_search(get_str('q'));
 
-    // $stmt->execute(['search' => $searchTerm]);
-    $stmt->execute([
-        ':search1' => $searchTerm,
-        ':search2' => $searchTerm,
-    ]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                if (!is_empty_input($query)) {
+                    logActivity(LOG_SEARCH);
 
-    if (count($rows) === 0) {
-        echo "<p style='color:red;'>No users found.</p>";
-    }
+                    // $searchTerm = "%" . $query . "%";
+                    $searchTerm = $query;
 
-    foreach ($rows as $row) {
-        $safeUsername = escape_output($row['username']);
-        $safePublicId = escape_output($row['public_id']);
+                    // Check PDO is available
+                    if (!isset($pdo) || $pdo === null) {
+                        die("<p class='error-msg'>Database connection failed.</p>");
+                    }
 
-        $urlUsername = urlencode($row['username']);
-        $urlPublicId = urlencode($row['public_id']);
+                    $stmt = $pdo->prepare("
+                SELECT username, public_id 
+                FROM users 
+                WHERE username = :search1 OR public_id = :search2
+                LIMIT 32
+            ");
 
-        $safeUsernameHref = escape_attr("view_profile.php?username=" . $urlUsername);
-        $safePublicIdHref = escape_attr("view_profile.php?id=" . $urlPublicId);
 
-        echo '<div class="result-item">';
-        echo '<a href="' . $safePublicIdHref . '">' . $safeUsername . '</a>';
-        echo '</div>';
-    }
-}
-?>
-</div>
+                    if (!$stmt) {
+                        die("<p class='error-msg'>Query prepare failed.</p>");
+                    }
 
-<?php include("footer.html"); ?>
+                    // $stmt->execute(['search' => $searchTerm]);
+                    $stmt->execute([
+                        ':search1' => $searchTerm,
+                        ':search2' => $searchTerm,
+                    ]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                    if (count($rows) === 0) {
+                        echo "<p class='error-msg'>No users found.</p>";
+                    } else {
+                        echo '<div class="bento-grid">';
+                        foreach ($rows as $row) {
+                            $safeUsername = escape_output($row['username']);
+                            $safePublicId = escape_output($row['public_id']);
+
+                            $urlUsername = urlencode($row['username']);
+                            $urlPublicId = urlencode($row['public_id']);
+
+                            $safeUsernameHref = escape_attr("view_profile.php?username=" . $urlUsername);
+                            $safePublicIdHref = escape_attr("view_profile.php?id=" . $urlPublicId);
+
+                            echo '<a href="' . $safePublicIdHref . '" style="text-decoration:none;">';
+                            echo '<div class="card" style="padding: 1.5rem; text-align:center; transition: all 0.3s ease;">';
+                            echo '<h3 class="text-cyan" style="margin:0;">' . $safeUsername . '</h3>';
+                            echo '<p class="text-muted" style="margin-top:0.5rem; font-size: 0.8rem;">ID: ' . $safePublicId . '</p>';
+                            echo '</div>';
+                            echo '</a>';
+                        }
+                        echo '</div>';
+                    }
+                }
+                ?>
+            </div>
+        </div>
+    </div>
+
+    <?php include("footer.html"); ?>
 </body>
+
 </html>

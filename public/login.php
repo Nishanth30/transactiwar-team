@@ -67,39 +67,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 <head>
     <meta charset="UTF-8">
-    <title>Login</title>
+    <title>Transactiwar | Login</title>
     <?= csrfMeta() ?>
+    <link rel="stylesheet" href="/assets/css/style.css">
 </head>
 
 <body>
 
-    <h2>Login</h2>
+    <div class="container auth-container">
+        <div class="card">
+            <h2 class="text-center text-glow">Login</h2>
 
-    <?php if ($error !== ''): ?>
-        <p style="color:red;">
-            <?= escape_output($error) ?>
-        </p>
-    <?php endif; ?>
+            <?php if ($error !== ''): ?>
+                <div class="error-msg">
+                    <?= escape_output($error) ?>
+                </div>
+            <?php endif; ?>
 
-    <form method="POST" action="">
-        <?= csrfField() ?>
+            <form method="POST" action="">
+                <?= csrfField() ?>
 
-        <label>
-            Username or Email:
-            <input type="text" name="identifier" required>
-        </label>
-        <br><br>
+                <div class="mt-2">
+                    <label>Username or Email</label>
+                    <input type="text" name="identifier" required>
+                </div>
 
-        <label>
-            Password:
-            <input type="password" name="password" required>
-        </label>
-        <br><br>
+                <div class="mt-2">
+                    <label>Password</label>
+                    <input type="password" name="password" required>
+                </div>
 
-        <button type="submit">Login</button>
-    </form>
+                <button type="submit" class="btn-primary mt-4">Login</button>
+            </form>
 
-    <a href="/register.php">Go to Register</a>
+            <div class="text-center mt-4">
+                <a href="/register.php" class="text-muted">Need an account? <span class="text-cyan">Register
+                        here</span></a>
+            </div>
+        </div>
+    </div>
 
 </body>
 
