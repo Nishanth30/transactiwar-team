@@ -1,9 +1,12 @@
 <?php
+
 declare(strict_types=1);
+
+require_once __DIR__ . '/../includes/header.php';
+send_security_headers();
 
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../config/db.php';
-
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/sanitize.php';
@@ -11,21 +14,20 @@ require_once __DIR__ . '/../includes/sanitize.php';
 $error = '';
 $success = '';
 
-/* Already logged in */
+// Prevent already-authenticated users from creating extra accounts accidentally.
 if (isset($_SESSION['user_id'])) {
     header('Location: /index.php');
     exit;
 }
 
-/* Handle form submit */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
+    // Registration mutates state; CSRF token is mandatory.
     verifyCsrf();
 
     $username = post_str('username');
     $email = normalize_email(post_str('email'));
-    $password = $_POST['password'] ?? '';
-    $confirmPassword = $_POST['confirm_password'] ?? '';
+    $password = (string) ($_POST['password'] ?? '');
+    $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
     if ($username === '' || $email === '' || $password === '' || $confirmPassword === '') {
         $error = 'All fields are required.';
@@ -39,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Passwords do not match.';
     } else {
         try {
+            // register_user() encapsulates DB uniqueness handling and password hashing.
             $result = register_user($pdo, $username, $email, $password);
 
             if ($result === true) {
@@ -48,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $error = 'Registration failed.';
             }
-
         } catch (Throwable $e) {
             error_log($e->getMessage());
             $error = 'Registration failed.';
@@ -56,19 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <title>Transactiwar | Register</title>
-    <?= csrfMeta() ?>
-    <link rel="stylesheet" href="/assets/css/style.css">
+    <?php render_page_head('Transactiwar | Register', csrfMeta()); ?>
 </head>
-
 <body>
-
     <div class="container auth-container">
         <div class="card">
             <h2 class="text-center text-glow">Register</h2>
@@ -85,13 +80,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             <?php endif; ?>
 
-            <form method="POST">
+            <form method="POST" action="/register.php">
                 <?= csrfField() ?>
 
                 <div class="mt-2">
                     <label>Username</label>
-                    <input type="text" name="username" required minlength="<?= MIN_USERNAME_LEN ?>"
-                        maxlength="<?= MAX_USERNAME_LEN ?>">
+                    <input type="text" name="username" required minlength="<?= MIN_USERNAME_LEN ?>" maxlength="<?= MAX_USERNAME_LEN ?>">
                 </div>
 
                 <div class="mt-2">
@@ -101,8 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <div class="mt-2">
                     <label>Password</label>
-                    <input type="password" name="password" required minlength="<?= MIN_PASSWORD_LEN ?>"
-                        maxlength="<?= MAX_PASSWORD_LEN ?>">
+                    <input type="password" name="password" required minlength="<?= MIN_PASSWORD_LEN ?>" maxlength="<?= MAX_PASSWORD_LEN ?>">
                 </div>
 
                 <div class="mt-2">
@@ -116,12 +109,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
 
             <div class="text-center mt-4">
-                <a href="/login.php" class="text-muted">Already have an account? <span
-                        class="text-cyan">Login</span></a>
+                <a href="/login.php" class="text-muted">Already have an account? <span class="text-cyan">Login</span></a>
             </div>
         </div>
     </div>
-
 </body>
-
 </html>
