@@ -5,6 +5,12 @@ require_once __DIR__ . '/../includes/header.php';
 send_security_headers();
 
 require_once __DIR__ . '/../includes/profile_update_logic.php';
+
+$flash_success_message = '';
+if (isset($_SESSION['flash_success']) && is_string($_SESSION['flash_success'])) {
+    $flash_success_message = $_SESSION['flash_success'];
+    unset($_SESSION['flash_success']);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -18,9 +24,9 @@ require_once __DIR__ . '/../includes/profile_update_logic.php';
         <div class="card p-4 shadow-lg">
             <h2 class="text-glow text-center mb-4">Update Operational Profile</h2>
 
-            <?php if ($update_success): ?>
+            <?php if ($flash_success_message !== ''): ?>
                 <div class="alert alert-success">
-                    Profile updated successfully! <a href="/view_profile.php" class="text-cyan fw-bold">View Profile</a>
+                    <?= escape_output($flash_success_message) ?> <a href="/view_profile.php" class="text-cyan fw-bold">View Profile</a>
                 </div>
             <?php endif; ?>
 
