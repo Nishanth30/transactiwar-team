@@ -19,7 +19,18 @@ function is_secure_request(): bool
         return true;
     }
 
-    return (string) ($_SERVER['SERVER_PORT'] ?? '') === '443';
+    if ((string) ($_SERVER['SERVER_PORT'] ?? '') === '443') {
+        return true;
+    }
+
+    // Reverse proxy / load balancer TLS termination (e.g. nginx, Docker ingress).
+    // HTTP_X_FORWARDED_PROTO is only trusted when the request arrives from a
+    // known proxy — REMOTE_ADDR spoofing is not possible at the TCP level.
+    if (strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https') {
+        return true;
+    }
+
+    return false;
 }
 
 function get_request_scheme(): string

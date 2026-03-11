@@ -21,7 +21,7 @@ function build_csp(string $nonce): string
     $directives = [
         "default-src 'self'",
         "script-src 'self' 'nonce-{$nonce}' 'strict-dynamic'",
-        "style-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'nonce-{$nonce}'",
         "img-src 'self' data: blob:",
         "font-src 'self' data:",
         "connect-src 'self'",
@@ -57,8 +57,6 @@ function build_asset_csp(): string
 function remove_disclosure_headers(): void
 {
     header_remove('X-Powered-By');
-    header_remove('Content-Security-Policy');
-    header_remove('Strict-Transport-Security');
     header_remove('X-Generator');
     header_remove('X-Runtime');
     header_remove('X-Version');
