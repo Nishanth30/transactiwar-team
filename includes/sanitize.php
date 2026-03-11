@@ -8,6 +8,8 @@
 
 declare(strict_types = 1)
 ;
+
+require_once __DIR__ . '/request.php';
 // ══════════════════════════════════════════════════════════════════
 //  CONSTANTS — derived from your init.sql schema
 // ══════════════════════════════════════════════════════════════════
@@ -685,39 +687,7 @@ function safe_redirect_url(string $url, string $default = '/index.php'): string
  */
 function get_client_ip(): string
 {
-    // Check proxy headers — but don't trust them blindly
-    // X-Forwarded-For can be spoofed but is better than nothing
-    $candidates = [];
-
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        // Can be comma-separated list — take the first one
-        $forwarded = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        $candidates[] = trim($forwarded[0]);
-    }
-
-    if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-        $candidates[] = trim($_SERVER['HTTP_CLIENT_IP']);
-    }
-
-    // REMOTE_ADDR is most reliable — not spoofable at TCP level
-    if (!empty($_SERVER['REMOTE_ADDR'])) {
-        $candidates[] = trim($_SERVER['REMOTE_ADDR']);
-    }
-
-    // Validate each candidate — return first valid IP
-    foreach ($candidates as $ip) {
-        if (
-        filter_var(
-        $ip,
-        FILTER_VALIDATE_IP,
-        FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6
-        )
-        ) {
-            return $ip;
-        }
-    }
-
-    return '0.0.0.0'; // fallback — should never reach here
+    return get_request_client_ip();
 }
 
 /**
