@@ -1,27 +1,37 @@
 <?php
 
+// error_log('SESSION: ' . print_r($_SESSION, true));
+// error_log('POST: ' . print_r($_POST, true));
+// require_once __DIR__ . '/header.php';
+// send_security_headers();
+// no_cache();
 
-require_once __DIR__ . '/header.php';
-send_security_headers();
-no_cache();
-
-require_once __DIR__ . '/../config/session.php';
-require_once __DIR__ . '/auth.php';
-require_once __DIR__ . '/csrf.php';
-require_once __DIR__ . '/sanitize.php';
-require_once __DIR__ . '/logger.php';
-require_once __DIR__ . '/../config/db.php';
+// require_once __DIR__ . '/../config/session.php';
+// require_once __DIR__ . '/auth.php';
+// require_once __DIR__ . '/csrf.php';
+// require_once __DIR__ . '/sanitize.php';
+// require_once __DIR__ . '/logger.php';
+// require_once __DIR__ . '/../config/db.php';
 // TEMP DEBUG — remove after fixing
 
+// REMOVED ALL HEADERS BECAUSE THEY GET CARRIED IN FROM PAYMENT_PAGE
+
 require_login();
-// ── CSRF verification ────────────────────────────────────────────
-// Must be the very first thing — before reading any POST data.
-// Kills the request with 403 if token is missing, expired, or forged.
 verifyCsrf();
 
-$_SESSION['transfer_result'] = "fail";
 
-// ── Collect and sanitize inputs ──────────────────────────────────
+$nonce = post_str('transfer_nonce');
+if (!$nonce || !isset($_SESSION['transfer_nonce']) || 
+    !hash_equals($_SESSION['transfer_nonce'], $nonce)) {
+    logActivity(LOG_TRANSFER_INVALID);
+    $_SESSION['transfer_error'] = "Invalid or expired transfer session.";
+    header("Location: " . sanitize_header("/transaction_result.php"));
+    exit;
+}
+// Consume immediately — one use only
+unset($_SESSION['transfer_nonce']);
+
+$_SESSION['transfer_result'] = "fail";
 
 $sender_id = (int) $_SESSION['user_id'];
 
@@ -140,7 +150,6 @@ try {
     }
 
     if ((int)$sender['balance_paise'] < $amount_paise) {
-        logActivity(LOG_TRANSFER_FAIL);
         throw new RuntimeException("insufficient_balance");
     }
 
@@ -166,7 +175,8 @@ try {
     $pdo->commit();
 
     logActivity(LOG_TRANSFER_OK);
-    $_SESSION['transfer_result'] = "successful";
+    $_SESSION['transfer_result']   = "successful";
+    $_SESSION['transfer_complete'] = true;  // ← survives transaction_result.php
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 

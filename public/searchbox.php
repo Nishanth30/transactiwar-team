@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/logger.php';
 require_once __DIR__ . '/../config/db.php';
 
 require_login();
+unset($_SESSION['transfer_complete']);
 
 include("header.html");
 ?>

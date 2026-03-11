@@ -13,6 +13,15 @@ require_login();
 
 // If form was submitted, hand off to backend processor
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // If transfer_complete is set, this is a back-button resubmission
+    // with a stale CSRF token — redirect safely before verifyCsrf() fires
+    if (isset($_SESSION['transfer_complete'])) {
+        $_SESSION['transfer_error'] = "This transfer has already been processed.";
+        $_SESSION['transfer_result'] = "fail";
+        header('Location: ' . sanitize_header('/transaction_result.php'));
+        exit;
+    }
+
     require_once __DIR__ . '/../includes/process_payment.php';
     exit;
 }
@@ -21,9 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $targetUuid = sanitize_uuid(get_str('target_uuid'));
 
 if ($targetUuid === null) {
+    logActivity(LOG_INVALID_INPUT);
     header('Location: ' . sanitize_header('/index.php'));
     exit;
 }
+
 
 // ── Fetch receiver from DB by UUID ───────────────────────────────
 // Username is NEVER taken from the URL — only from the DB row the
@@ -34,11 +45,15 @@ $stmt = $pdo->prepare(
 $stmt->execute([$targetUuid]);
 $receiver = $stmt->fetch(PDO::FETCH_ASSOC);
 
+
 if (!$receiver) {
-    // UUID doesn't match any account — abort
+    logActivity(LOG_INVALID_INPUT);
     header('Location: ' . sanitize_header('/index.php'));
     exit;
 }
+
+$transferNonce = bin2hex(random_bytes(16));
+$_SESSION['transfer_nonce'] = $transferNonce;
 
 $receiverUsername = $receiver['username'];   // authoritative, from DB
 
@@ -50,7 +65,7 @@ $stmt->execute([$_SESSION['user_id']]);
 $sender = $stmt->fetch(PDO::FETCH_ASSOC);
 $balanceRupees = number_format($sender['balance_paise'] / 100, 2);
 
-logActivity(LOG_PROFILE_OTHER);
+logActivity(LOG_PAGE_VIEW);
 
 ?>
 <!DOCTYPE html>
@@ -83,6 +98,7 @@ logActivity(LOG_PROFILE_OTHER);
 
             <form action="/payment_page.php" method="POST">
                 <?= csrfField() ?>
+                <input type="hidden" name="transfer_nonce" value="<?= escape_attr($transferNonce) ?>">
                 <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
 
                 <div class="mt-2">
