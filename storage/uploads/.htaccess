@@ -1,3 +1,15 @@
-# Block ALL direct web access to this directory.
-# Profile images must be served through public/serve_image.php only.
+# Block ALL direct HTTP access to this directory.
+# Images are served exclusively through public/serve_image.php.
+# storage/ is already outside the Apache web root (defense-in-depth).
+
+# Apache 2.4 — deny all direct requests
 Require all denied
+
+# Disable PHP execution entirely — belt-and-suspenders
+# Prevents RCE even if a polyglot file survives upload validation
+php_flag engine off
+Options -ExecCGI -Indexes
+
+# Strip PHP handler so Apache never treats files here as scripts
+RemoveHandler .php .php3 .php4 .php5 .php7 .phtml .phar
+RemoveType application/x-httpd-php .php .php3 .php4 .php5 .php7 .phtml .phar

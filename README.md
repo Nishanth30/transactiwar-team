@@ -1,24 +1,38 @@
 # transactiwar-team
 
-Secure-by-default local stack for TransactiWar (`PHP + Apache + MySQL + Docker Compose`).
+TransactiWar assignment project (`PHP + Apache + MySQL + Docker Compose`).
 
-## Quick Start (Friction-Free Onboarding)
+## Project Scope
 
-Run from project root:
+This repository is focused on the assignment application itself:
 
-```bash
-cd <repo-root>
-```
+- authentication and session management
+- profile and image upload
+- user search
+- transfers and transaction history
+- security controls (CSRF, validation, prepared statements, safe output)
 
-1. Copy env template:
+## Documentation Map
+
+- Contributor workflow: `docs/CONTRIBUTOR_GUIDE.md`
+- Team ownership and module contracts: `docs/INTEROPERABILITY.md`
+- Branching workflow: `docs/BRANCHING_AND_DEPLOYMENT.md`
+- Docker architecture walkthrough: `docs/DockerCompose_Walkthrough.md`
+
+## Prerequisites
+
+- Docker and Docker Compose
+- Git
+
+## Environment Setup
+
+Create `docker/.env` from the tracked template:
 
 ```bash
 cp docker/.env.example docker/.env
 ```
 
-2. Edit `docker/.env` with local values.
-
-Required:
+Required values in `docker/.env`:
 
 - `MYSQL_ROOT_PASSWORD`
 - `MYSQL_DATABASE`
@@ -26,24 +40,27 @@ Required:
 - `MYSQL_PASSWORD`
 - `APP_PORT`
 - `APP_DIAGNOSTIC_MODE`
+- `SESSION_SECRET`
 
-3. Start everything:
+Generate a session secret (minimum 32 random characters):
+
+```bash
+openssl rand -hex 32
+```
+
+Recommended local default:
+
+```dotenv
+APP_PORT=8080
+```
+
+## Start the Project
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
 ```
 
-Important:
-
-- The first run initializes MySQL users/passwords from your current `docker/.env`.
-- If you later change `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_PASSWORD`, or `MYSQL_DATABASE`, reset DB volume once:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
-```
-
-4. Confirm service status:
+Check status:
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml ps
@@ -52,116 +69,56 @@ docker compose --env-file docker/.env -f docker/docker-compose.yml ps
 Expected:
 
 - `db` is `healthy`
-- `setup` is `Exited (0)`
+- `setup` exits successfully
 - `app` is `Up`
 
-5. Open app in browser:
+Open the app:
 
 ```bash
-APP_PORT_VAL="$(awk -F= '/^APP_PORT=/{print $2}' docker/.env | tail -n1)"
-echo "http://localhost:${APP_PORT_VAL}"
+echo "http://127.0.0.1:$(awk -F= '/^APP_PORT=/{print $2}' docker/.env | tail -n1)/"
 ```
 
-## Startup Pipeline
+## Smoke Test
 
-Startup order is enforced in compose:
+After startup, verify core flows manually:
 
-- `db` (healthy) -> `setup` (seed users) -> `app`
+1. register
+2. login
+3. view/edit profile
+4. upload avatar
+5. search users
+6. transfer funds
+7. check transaction history
+8. logout
 
-This removes DB/seed race conditions during onboarding.
-
-## Verification Checklist
-
-1. Check setup service output:
+Useful checks:
 
 ```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml logs --no-color setup
+curl -kisS http://127.0.0.1:8080/login.php | sed -n '1,40p'
+curl -kisS http://127.0.0.1:8080/assets/css/style.css | sed -n '1,20p'
 ```
 
-Expected lines include:
+## Database Notes
 
-- `MySQL is reachable`
-- `Schema detected; seeding test users`
-- `Ensuring secure public user IDs are present...`
-- `Seeded 6 test users successfully`
+Startup order is enforced by compose:
 
-2. Check app endpoint:
+- `db (healthy) -> setup (seed) -> app`
+
+If DB credentials or DB name change after first run, recreate volumes:
 
 ```bash
-APP_PORT_VAL="$(awk -F= '/^APP_PORT=/{print $2}' docker/.env | tail -n1)"
-curl -s "http://127.0.0.1:${APP_PORT_VAL}"
+docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
 ```
 
-Expected output includes:
+The setup job ensures:
 
-- `PHP running`
+- schema exists
+- `public_id` values exist and are unique
+- `login_attempts` exists
+- assignment seed users are present
 
-3. Verify schema tables:
-
-```bash
-set -a; source docker/.env; set +a
-docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
-  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SHOW TABLES;"
-```
-
-Expected tables:
-
-- `users`
-- `transactions`
-- `activity_logs`
-- `login_attempts`
-
-4. Verify seeded test users:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
-  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" \
-  -e "SELECT username,public_id,email,balance_paise FROM users WHERE username LIKE 'test_%' ORDER BY username;"
-```
-
-Expected rows:
-
-- `test_alice`, `test_bob`, `test_carol`, `test_dave`, `test_erin`, `test_frank`
-
-5. Verify secure public IDs exist and are unique:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
-  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" \
-  -e "SHOW INDEX FROM users; SELECT username,public_id FROM users ORDER BY id LIMIT 10;"
-```
-
-Expected:
-
-- unique index `uq_users_public_id` is present
-- every user row has a non-null UUID-like `public_id`
-
-## DB Persistence Check
-
-To confirm DB persistence works:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml down
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
-docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
-  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM users;"
-```
-
-If data is still present, named volume persistence is working.
-
-## Day-to-Day Commands
-
-Start services:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
-```
-
-Stop services:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml down
-```
+## Useful Commands
 
 Tail logs:
 
@@ -169,83 +126,21 @@ Tail logs:
 docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f app db setup
 ```
 
-Open app container shell:
+Open app shell:
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml exec app sh
 ```
 
-Open DB container shell:
+Open DB shell:
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml exec db sh
 ```
 
-Reset DB (destructive):
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
-```
-
-## Common Troubleshooting
-
-App not reachable in browser/curl:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --force-recreate app
-docker compose --env-file docker/.env -f docker/docker-compose.yml ps
-```
-
-Confirm `app` shows `127.0.0.1:<APP_PORT>->80/tcp` in `PORTS`.
-
-Access denied for DB user after env changes:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
-```
-
-Why this happens:
-
-- MySQL credentials from `docker/.env` are applied only when `mysql_data` volume is created.
-- Existing volumes keep old credentials until you recreate the volume.
-
-`setup` exits with `users table was not found`:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml logs --no-color setup
-docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
-docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
-```
-
-Why this happens:
-
-- Either `MYSQL_DATABASE` changed after `mysql_data` was initialized, or schema bootstrap did not run on first DB init.
-- `database/init.sql` must remain database-agnostic (no `CREATE DATABASE`, no `USE`) and contain table DDL only.
-
-## Walkthrough Docs
-
-- `docs/DockerCompose_Walkthrough.md` - service-by-service compose design and security reasoning
-- `docs/SetupScript_Walkthrough.md` - detailed behavior of `docker/setup.sh`
-- `docs/SessionChanges_Walkthrough.md` - implementation/verification mapping for this session
-- `docs/DBSchema_Walkthrough.md` - database schema rationale
-- `docs/IndexPHP_Walkthrough.md` - entrypoint and secure PHP behavior
-- `docs/INTEROPERABILITY.md` - team ownership and change contract
-
-## Team Ownership
-
-| Member | Role | Core responsibility |
-|---|---|---|
-| Beaver | Member 1 | Auth and session management |
-| Spider | Member 2 | Profile management and file upload |
-| Cat | Member 3 | Search and money transfer |
-| Dog | Member 4 | Security hardening and cross-cutting |
-| Capybara | Member 5 | Infrastructure, Docker and DB |
-
 ## Contributor Rules
 
-- Commit `docker/.env.example`; never commit `docker/.env`.
-- App container is intentionally prevented from reading real `docker/.env` (masked with `.env.example`).
-- Use app DB user (`MYSQL_USER`) in application code, not root.
-- For breaking DB changes, update docs and provide reset instructions in the PR.
+- Commit `docker/.env.example`, not `docker/.env`.
+- Do not commit private keys or machine-specific secrets.
+- Use application DB credentials (`MYSQL_USER`) from code, not root.
+- Update documentation in the same PR when contracts or behavior change.

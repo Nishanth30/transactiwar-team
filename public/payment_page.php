@@ -1,7 +1,11 @@
 <?php
+
+declare(strict_types=1);
+
 require_once __DIR__ . '/../includes/header.php';
 send_security_headers();
 no_cache();
+
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
@@ -11,7 +15,6 @@ require_once __DIR__ . '/../includes/auth.php';
 
 require_login();
 
-// If form was submitted, hand off to backend processor
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // If transfer_complete is set, this is a back-button resubmission
     // with a stale CSRF token — redirect safely before verifyCsrf() fires
@@ -26,9 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// ── GET — validate UUID from URL ──────────────────────────────────
+// Receiver identity is always addressed via public UUID, never internal numeric ID.
 $targetUuid = sanitize_uuid(get_str('target_uuid'));
-
 if ($targetUuid === null) {
     logActivity(LOG_INVALID_INPUT);
     header('Location: ' . sanitize_header('/index.php'));
@@ -70,29 +72,22 @@ logActivity(LOG_PAGE_VIEW);
 ?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <title>Transactiwar | Pay <?= escape_output($receiverUsername) ?></title>
+    <?php render_page_head('Transactiwar | Pay ' . $receiverUsername); ?>
 </head>
-
 <body>
-
     <?php include __DIR__ . '/header.html'; ?>
 
     <div class="container auth-container">
         <div class="card">
             <h2 class="text-glow text-center">Transfer Funds</h2>
 
-            <div class="card"
-                style="background: rgba(0,0,0,0.3); border: none; margin-bottom: 2rem; text-align: center; padding: 1.5rem;">
+            <div class="card" style="background: rgba(0,0,0,0.3); border: none; margin-bottom: 2rem; text-align: center; padding: 1.5rem;">
                 <p class="text-muted" style="margin: 0; font-size: 0.9rem;">Target Agent</p>
                 <h3 class="text-cyan" style="margin: 0.5rem 0 1.5rem 0;"><?= escape_output($receiverUsername) ?></h3>
-                <div
-                    style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
                     <span class="text-muted" style="font-size: 0.9rem;">Your secure balance:</span>
-                    <strong class="text-success"
-                        style="font-family: 'Fira Code', monospace; font-size: 1.1rem; color: var(--success);">₹<?= escape_output($balanceRupees) ?></strong>
+                    <strong class="text-success" style="font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace; font-size: 1.1rem; color: var(--success);">₹<?= escape_output($balanceRupees) ?></strong>
                 </div>
             </div>
 
@@ -119,5 +114,4 @@ logActivity(LOG_PAGE_VIEW);
 
     <?php include __DIR__ . '/footer.html'; ?>
 </body>
-
 </html>

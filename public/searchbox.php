@@ -1,100 +1,105 @@
 <?php
 
-require_once __DIR__ . '/../includes/header.php';
-require_once __DIR__ . '/../config/session.php';
+declare(strict_types=1);
 
-require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/header.php';
+send_security_headers();
+
+require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/sanitize.php';
 require_once __DIR__ . '/../includes/logger.php';
 require_once __DIR__ . '/../config/db.php';
 
 require_login();
+
 unset($_SESSION['transfer_complete']);
 
-include("header.html");
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Search Users</title>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        #searchbar { width: 300px; padding: 8px; font-size: 16px; }
-        .results-container { margin-top: 20px; width: 300px; border: 1px solid #ccc; }
-        .result-item { display: block; padding: 8px; border-top: 1px solid #eee; text-decoration: none; color: black; }
-        .result-item:hover { background-color: #f2f2f2; }
-    </style>
+    <?php render_page_head('Transactiwar | Search Users'); ?>
 </head>
 <body>
+    <?php include __DIR__ . '/header.html'; ?>
 
-<h2>Search Users</h2>
+    <div class="container">
+        <div class="card">
+            <h2 class="text-glow">Search Users</h2>
 
-<form method="GET" action="">
-    <input type="text" name="q" id="searchbar" placeholder="Search users...">
-    <button type="submit">Search</button>
-</form>
+            <form method="GET" action="/searchbox.php" style="flex-direction: row; align-items: flex-end;">
+                <div style="flex: 1;">
+                    <input type="text" name="q" id="searchbar" placeholder="Enter username...">
+                </div>
+                <button type="submit" class="btn-primary" style="margin-top:0;">Search</button>
+            </form>
 
-<div class="results-container">
-<?php
+            <div class="results-container mt-4">
+                <?php
 
 
-$query = sanitize_search(get_str('q'));
+                $query = sanitize_search(get_str('q'));
 
-if (!is_empty_input($query)) {
-    logActivity(LOG_SEARCH);
+                if (!is_empty_input($query)) {
+                    logActivity(LOG_SEARCH);
 
-    // $searchTerm = "%" . $query . "%";
-    $searchTerm = $query;
+                    // $searchTerm = "%" . $query . "%";
+                    $searchTerm = $query;
 
-    // Check PDO is available
-    if (!isset($pdo) || $pdo === null) {
-        die("<p style='color:red;'>Database connection failed.</p>");
-    }
+                    // Check PDO is available
+                    if (!isset($pdo) || $pdo === null) {
+                        die("<p class='error-msg'>Database connection failed.</p>");
+                    }
 
-    $stmt = $pdo->prepare("
-        SELECT username, public_id 
-        FROM users 
-        WHERE username = :search1 OR public_id = :search2
-        LIMIT 32
-    ");
+                    $stmt = $pdo->prepare("
+                SELECT username, public_id 
+                FROM users 
+                WHERE username = :search1 OR public_id = :search2
+                LIMIT 32
+            ");
 
 
     if (!$stmt) {
-        die("<p style='color:red;'>Query prepare failed.</p>");
+        die("<p class='error-msg'>Query prepare failed.</p>");
     }
 
-    // $stmt->execute(['search' => $searchTerm]);
-    $stmt->execute([
-        ':search1' => $searchTerm,
-        ':search2' => $searchTerm,
-    ]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    // $stmt->execute(['search' => $searchTerm]);
+                    $stmt->execute([
+                        ':search1' => $searchTerm,
+                        ':search2' => $searchTerm,
+                    ]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (count($rows) === 0) {
-        echo "<p style='color:red;'>No users found.</p>";
-    }
+                    if (count($rows) === 0) {
+                        echo "<p class='error-msg'>No users found.</p>";
+                    } else {
+                        echo '<div class="bento-grid">';
+                        foreach ($rows as $row) {
+                            $safeUsername = escape_output($row['username']);
+                            $safePublicId = escape_output($row['public_id']);
 
-    foreach ($rows as $row) {
-        $safeUsername = escape_output($row['username']);
-        $safePublicId = escape_output($row['public_id']);
+                            $urlUsername = urlencode($row['username']);
+                            $urlPublicId = urlencode($row['public_id']);
 
-        $urlUsername = urlencode($row['username']);
-        $urlPublicId = urlencode($row['public_id']);
+                            $safeUsernameHref = escape_attr("view_profile.php?username=" . $urlUsername);
+                            $safePublicIdHref = escape_attr("view_profile.php?id=" . $urlPublicId);
 
-        $safeUsernameHref = escape_attr("view_profile.php?username=" . $urlUsername);
-        $safePublicIdHref = escape_attr("view_profile.php?id=" . $urlPublicId);
-
-        echo '<div class="result-item">';
-        echo '<a href="' . $safePublicIdHref . '">' . $safeUsername . '</a>';
+            echo '<a href="' . $safePublicIdHref . '" style="text-decoration:none;">';
+            echo '<div class="card" style="padding: 1.5rem; text-align:center; transition: all 0.3s ease;">';
+            echo '<h3 class="text-cyan" style="margin:0;">' . $safeUsername . '</h3>';
+            echo '<p class="text-muted" style="margin-top:0.5rem; font-size: 0.8rem;">ID: ' . $safePublicId . '</p>';
+            echo '</div>';
+            echo '</a>';
+        }
         echo '</div>';
     }
 }
 ?>
-</div>
+            </div>
+        </div>
+    </div>
 
-<?php include("footer.html"); ?>
+    <?php include __DIR__ . '/footer.html'; ?>
 </body>
 </html>
