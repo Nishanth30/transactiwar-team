@@ -1,12 +1,12 @@
 # Interoperability Contract
 
-This document defines team boundaries, shared interfaces, and change rules so all members can work in parallel without breaking each other.
+This document defines team boundaries, shared interfaces, and change rules so members can work in parallel without breaking each other.
 
 ## Team ownership
 
 | Member | Role | Owns | Must coordinate before changing |
 |---|---|---|---|
-| Beaver | Auth and Session | login/logout/session behavior | anything that changes session keys, auth middleware behavior, or login response contract |
+| Beaver | Auth and Session | login/logout/session behavior | session keys, auth middleware behavior, login response contract |
 | Spider | Profile and Upload | profile update flows and file upload behavior | file path conventions, upload validation rules, profile payload shape |
 | Cat | Search and Transfer | search endpoints and transfer logic | transfer transaction model, transfer validation contract, search query params |
 | Dog | Security and Cross-cutting | shared security controls and review gates | security headers, validation standards, error handling policy, authz checks |
@@ -20,6 +20,22 @@ This document defines team boundaries, shared interfaces, and change rules so al
 - Database bootstrap schema: `database/init.sql`
 - Web entrypoint: `public/index.php`
 - Team runbook: `README.md`
+- Contributor playbook: `docs/CONTRIBUTOR_GUIDE.md`
+- Branching workflow: `docs/BRANCHING_AND_DEPLOYMENT.md`
+
+## Branch contract
+
+Use a simple, review-friendly branch model:
+
+- `main` is the stable integration branch.
+- `feature/*` is used for scoped implementation work.
+- `fix/*` is used for targeted bug fixes.
+
+Any branch workflow updates must be reflected in:
+
+- `README.md`
+- `docs/BRANCHING_AND_DEPLOYMENT.md`
+- this interoperability contract
 
 ## Shared runtime contract
 
@@ -30,10 +46,9 @@ All members must use these runtime assumptions:
 - Startup order is enforced as `db (healthy) -> setup (seed) -> app`.
 - Team-local secrets are in `docker/.env`; never commit that file.
 - Required env vars:
-`MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `APP_PORT`, `APP_DIAGNOSTIC_MODE`
+`MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `APP_PORT`, `APP_DIAGNOSTIC_MODE`, `SESSION_SECRET`
 - Optional setup tuning vars:
 `DB_WAIT_ATTEMPTS`, `DB_WAIT_SLEEP_SECONDS`
-- Default app exposure is localhost only (`127.0.0.1` binding).
 
 ## Data and DB contract
 
