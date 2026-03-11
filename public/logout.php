@@ -1,5 +1,9 @@
 <?php
+
 declare(strict_types=1);
+
+require_once __DIR__ . '/../includes/header.php';
+send_security_headers();
 
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
@@ -8,12 +12,14 @@ require_once __DIR__ . '/../includes/logger.php';
 require_once __DIR__ . '/../config/db.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Logout is a state-changing action, so we require a CSRF token.
     verifyCsrf();
-    logout_user();  // session_regenerate_id(true) + cookie deletion + logging
+    logout_user();
     header('Location: /login.php');
     exit;
 }
 
+// The GET route only renders a confirmation page.
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     header('Allow: GET, POST');
     http_response_code(405);
@@ -23,16 +29,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 ?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <title>Transactiwar | Confirm Logout</title>
-    <?= csrfMeta() ?>
-    <link rel="stylesheet" href="/assets/css/style.css">
+    <?php render_page_head('Transactiwar | Confirm Logout', csrfMeta()); ?>
 </head>
-
 <body>
-    <?php include("header.html"); ?>
+    <?php include __DIR__ . '/header.html'; ?>
 
     <div class="container auth-container">
         <div class="card" style="text-align: center;">
@@ -40,16 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             <p class="text-muted mt-2 mb-4">Are you sure you want to securely end your session?</p>
             <form method="POST" action="/logout.php">
                 <?= csrfField() ?>
-                <button type="submit" class="btn-primary"
-                    style="background: rgba(255,50,50,0.2) !important; color: #ff5555 !important; border-color: #ff5555 !important; box-shadow: 0 0 10px rgba(255, 50, 50, 0.4) !important;">Sign
-                    Out</button>
-                <a href="/index.php" class="btn btn-primary"
-                    style="background: transparent !important; margin-left:1rem; text-decoration:none; display: inline-block;">Cancel</a>
+                <button type="submit" class="btn-primary" style="background: rgba(255,50,50,0.2) !important; color: #ff5555 !important; border-color: #ff5555 !important; box-shadow: 0 0 10px rgba(255, 50, 50, 0.4) !important;">Sign Out</button>
+                <a href="/index.php" class="btn btn-primary" style="background: transparent !important; margin-left:1rem; text-decoration:none; display: inline-block;">Cancel</a>
             </form>
         </div>
     </div>
 
-    <?php include("footer.html"); ?>
+    <?php include __DIR__ . '/footer.html'; ?>
 </body>
-
 </html>
