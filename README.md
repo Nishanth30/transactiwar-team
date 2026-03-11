@@ -98,6 +98,52 @@ curl -kisS http://127.0.0.1:8080/login.php | sed -n '1,40p'
 curl -kisS http://127.0.0.1:8080/assets/css/style.css | sed -n '1,20p'
 ```
 
+## Verification Checklist
+
+Check setup service output:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml logs --no-color setup
+```
+
+Expected lines include:
+
+- `MySQL is reachable`
+- `Schema detected; seeding test users`
+- `Ensuring secure public user IDs are present...`
+- `Seeded 6 test users successfully`
+
+Check app endpoint:
+
+```bash
+APP_PORT_VAL="$(awk -F= '/^APP_PORT=/{print $2}' docker/.env | tail -n1)"
+curl -s "http://127.0.0.1:${APP_PORT_VAL}"
+```
+
+Verify schema tables:
+
+```bash
+set -a; source docker/.env; set +a
+docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
+  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SHOW TABLES;"
+```
+
+Verify seeded test users:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
+  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" \
+  -e "SELECT username,public_id,email,balance_paise FROM users WHERE username LIKE 'test_%' ORDER BY username;"
+```
+
+Verify secure public IDs and unique index:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
+  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" \
+  -e "SHOW INDEX FROM users; SELECT username,public_id FROM users ORDER BY id LIMIT 10;"
+```
+
 ## Database Notes
 
 Startup order is enforced by compose:
@@ -120,6 +166,18 @@ The setup job ensures:
 
 ## Useful Commands
 
+Start services:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+```
+
+Stop services:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml down
+```
+
 Tail logs:
 
 ```bash
@@ -136,6 +194,39 @@ Open DB shell:
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml exec db sh
+```
+
+DB persistence check:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml down
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+docker compose --env-file docker/.env -f docker/docker-compose.yml exec -T db \
+  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -D "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM users;"
+```
+
+## Common Troubleshooting
+
+App not reachable:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --force-recreate app
+docker compose --env-file docker/.env -f docker/docker-compose.yml ps
+```
+
+Access denied for DB user after env changes:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
+```
+
+`setup` exits with `users table was not found`:
+
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml logs --no-color setup
+docker compose --env-file docker/.env -f docker/docker-compose.yml down -v
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --build
 ```
 
 ## Contributor Rules
