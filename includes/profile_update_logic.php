@@ -9,6 +9,7 @@ require_once __DIR__ . '/../includes/logger.php'; // 🆕 ADDED: The Logger
 
 // 1. IDENTITY VERIFICATION (Kills IDOR)
 require_login();
+logActivity(LOG_PAGE_VIEW . ':profile_edit');
 $user_id = $_SESSION['user_id'];
 $public_id = $_SESSION['public_user_id'];
 
@@ -155,12 +156,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Now release the lock
             $pdo->commit();
-            $update_success = true;
             logActivity(LOG_PROFILE_UPDATE);
 
-            $stmt = $pdo->prepare("SELECT bio, profile_image_path FROM users WHERE id = :id LIMIT 1");
-            $stmt->execute([':id' => $user_id]);
-            $current_user = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Session flash — more secure than ?updated=1 in URL
+            // (doesn't appear in browser history, logs, or Referer headers)
+            $_SESSION['flash_success'] = 'Profile updated successfully!';
+
+            // PRG — redirect after POST so refresh doesn't re-submit the form
+            header('Location: /profile.php');
+            exit;
 
         }
         catch (PDOException $e) {

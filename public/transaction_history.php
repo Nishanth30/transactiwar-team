@@ -65,7 +65,7 @@ try {
     $dbError = true;
 }
 
-logActivity(LOG_PAGE_VIEW);
+logActivity(LOG_PAGE_VIEW . ':transaction_history');
 ?>
 <!DOCTYPE html>
 <html lang="en">
