@@ -3,11 +3,12 @@ require_once __DIR__ . '/sanitize.php';
 require_once __DIR__ . '/../config/session.php';
 
 /* |-------------------------------------------------------------------------- | Security constants |-------------------------------------------------------------------------- */
-const LOGIN_DELAY_MIN_US = 250000; // 0.25s
-const LOGIN_DELAY_MAX_US = 400000; // 0.40s
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_SECONDS = 300; // 5 minute lockout
-const ATTEMPT_WINDOW = 900; // reset attempt count after 15 min of inactivity
+const LOGIN_DELAY_MIN_US = 250000; // 0.25s base random delay (always applied)
+const LOGIN_DELAY_MAX_US = 400000; // 0.40s base random delay (always applied)
+const MAX_LOGIN_ATTEMPTS = 20;     // hard lock threshold — only last resort
+const LOCKOUT_SECONDS = 1800;      // 30 min hard lock — only after 20 attempts
+const ATTEMPT_WINDOW = 900;        // reset counter after 15 min of inactivity
+const BACKOFF_CAP_SECONDS = 30;    // max exponential backoff delay per attempt
 
 /*
  * Real bcrypt hash used when user is missing.
@@ -70,8 +71,9 @@ function record_failed_attempt(PDO $pdo, string $ip): void
 
     /*
      * INSERT new record or UPDATE existing.
-     * If last attempt was outside the window, reset counter.
-     * ON DUPLICATE KEY UPDATE handles the race condition atomically.
+     * If last attempt was outside the activity window, reset counter.
+     * locked_until is only set once MAX_LOGIN_ATTEMPTS (20) is reached
+     * — the exponential backoff handles throttling before that point.
      */
     $pdo->prepare("
         INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
@@ -91,6 +93,44 @@ function record_failed_attempt(PDO $pdo, string $ip): void
         'max' => MAX_LOGIN_ATTEMPTS,
         'lockout' => LOCKOUT_SECONDS,
     ]);
+}
+
+/*
+ * Exponential backoff delay based on prior failed attempts.
+ * Returns seconds of delay to apply BEFORE checking the password.
+ *
+ * Formula: 2^attempts seconds, capped at BACKOFF_CAP_SECONDS.
+ * Loose cap (30s) is intentional — strong password rules already
+ * make brute force impractical without aggressive lockout.
+ *
+ * Delay schedule:
+ *   1 fail  →  2s
+ *   2 fails →  4s
+ *   3 fails →  8s
+ *   4 fails → 16s
+ *   5+ fails→ 30s (cap)
+ */
+function get_backoff_delay(PDO $pdo, string $ip): int
+{
+    $stmt = $pdo->prepare("
+        SELECT attempts, last_attempt
+        FROM login_attempts
+        WHERE ip = :ip
+    ");
+    $stmt->execute(['ip' => $ip]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row || $row['attempts'] === 0) {
+        return 0;
+    }
+
+    // Reset if outside the activity window
+    if ($row['last_attempt'] < time() - ATTEMPT_WINDOW) {
+        return 0;
+    }
+
+    $delay = (int) min(2 ** $row['attempts'], BACKOFF_CAP_SECONDS);
+    return $delay;
 }
 
 function clear_failed_attempts(PDO $pdo, string $ip): void
@@ -190,13 +230,20 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
         ? get_client_ip()
         : sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
 
-    // Check IP lockout before doing any work
+    // Hard lock check — only triggers after MAX_LOGIN_ATTEMPTS (20) failures
     if (is_ip_locked($pdo, $ip)) {
         if (function_exists('logActivity')) {
             logActivity(LOG_LOGIN_LOCKED);
         }
         usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
         return 'locked';
+    }
+
+    // Exponential backoff — server-side enforced sleep based on prior failures.
+    // Applied BEFORE password_verify so even a correct guess is slowed down.
+    $backoffSeconds = get_backoff_delay($pdo, $ip);
+    if ($backoffSeconds > 0) {
+        sleep($backoffSeconds);
     }
 
     $identifier = trim($identifier);

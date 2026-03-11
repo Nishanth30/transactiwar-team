@@ -47,41 +47,61 @@ $stmt = $pdo->prepare(
     "SELECT balance_paise FROM users WHERE id = ? LIMIT 1"
 );
 $stmt->execute([$_SESSION['user_id']]);
-$sender        = $stmt->fetch(PDO::FETCH_ASSOC);
+$sender = $stmt->fetch(PDO::FETCH_ASSOC);
 $balanceRupees = number_format($sender['balance_paise'] / 100, 2);
 
 logActivity(LOG_PROFILE_OTHER);
 
-include __DIR__ . '/header.html';
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Pay <?= escape_output($receiverUsername) ?></title>
+    <title>Transactiwar | Pay <?= escape_output($receiverUsername) ?></title>
 </head>
+
 <body>
 
-<div>
-    <h2>Pay <?= escape_output($receiverUsername) ?></h2>
-    <p>Your balance: <strong>₹<?= escape_output($balanceRupees) ?></strong></p>
+    <?php include __DIR__ . '/header.html'; ?>
 
-    <form action="/payment_page.php" method="POST">
-        <?= csrfField() ?>
+    <div class="container auth-container">
+        <div class="card">
+            <h2 class="text-glow text-center">Transfer Funds</h2>
 
-        <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
+            <div class="card"
+                style="background: rgba(0,0,0,0.3); border: none; margin-bottom: 2rem; text-align: center; padding: 1.5rem;">
+                <p class="text-muted" style="margin: 0; font-size: 0.9rem;">Target Agent</p>
+                <h3 class="text-cyan" style="margin: 0.5rem 0 1.5rem 0;"><?= escape_output($receiverUsername) ?></h3>
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <span class="text-muted" style="font-size: 0.9rem;">Your secure balance:</span>
+                    <strong class="text-success"
+                        style="font-family: 'Fira Code', monospace; font-size: 1.1rem; color: var(--success);">₹<?= escape_output($balanceRupees) ?></strong>
+                </div>
+            </div>
 
-        <label>Amount (₹):</label><br>
-        <input type="number" name="amount" min="1" step="0.01" required><br>
-        <small>Minimum transfer: ₹1.00</small><br><br>
+            <form action="/payment_page.php" method="POST">
+                <?= csrfField() ?>
+                <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
 
-        <label>Remark:</label><br>
-        <input type="text" name="remark" maxlength="500" placeholder="Optional note..."><br><br>
+                <div class="mt-2">
+                    <label>Transfer Amount (₹)</label>
+                    <input type="number" name="amount" min="1" step="0.01" placeholder="0.00" required>
+                    <small class="text-muted" style="display:block; margin-top:0.5rem;">Minimum transfer: ₹1.00</small>
+                </div>
 
-        <button type="submit">Confirm Payment</button>
-    </form>
-</div>
+                <div class="mt-3">
+                    <label>Operational Remark (Optional)</label>
+                    <input type="text" name="remark" maxlength="500" placeholder="Enter secure note...">
+                </div>
 
-<?php include __DIR__ . '/footer.html'; ?>
+                <button type="submit" class="btn-primary mt-4" style="width: 100%;">Authorize Transfer</button>
+            </form>
+        </div>
+    </div>
+
+    <?php include __DIR__ . '/footer.html'; ?>
 </body>
+
 </html>

@@ -8,7 +8,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/sanitize.php';
 
-$error   = '';
+$error = '';
 $success = '';
 
 /* Already logged in */
@@ -22,9 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     verifyCsrf();
 
-    $username        = post_str('username');
-    $email           = normalize_email(post_str('email'));
-    $password        = $_POST['password']         ?? '';
+    $username = post_str('username');
+    $email = normalize_email(post_str('email'));
+    $password = $_POST['password'] ?? '';
     $confirmPassword = $_POST['confirm_password'] ?? '';
 
     if ($username === '' || $email === '' || $password === '' || $confirmPassword === '') {
@@ -59,64 +59,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Register</title>
+    <title>Transactiwar | Register</title>
     <?= csrfMeta() ?>
+    <link rel="stylesheet" href="/assets/css/style.css">
 </head>
+
 <body>
 
-<h2>Register</h2>
+    <div class="container auth-container">
+        <div class="card">
+            <h2 class="text-center text-glow">Register</h2>
 
-<?php if ($error !== ''): ?>
-    <p style="color:red;">
-        <?= escape_output($error) ?>
-    </p>
-<?php endif; ?>
+            <?php if ($error !== ''): ?>
+                <div class="error-msg">
+                    <?= escape_output($error) ?>
+                </div>
+            <?php endif; ?>
 
-<?php if ($success !== ''): ?>
-    <p style="color:green;">
-        <?= escape_output($success) ?>
-    </p>
-<?php endif; ?>
+            <?php if ($success !== ''): ?>
+                <div class="success-msg">
+                    <?= escape_output($success) ?>
+                </div>
+            <?php endif; ?>
 
-<form method="POST">
-    <?= csrfField() ?>
+            <form method="POST">
+                <?= csrfField() ?>
 
-    <label>
-        Username:
-        <input type="text" name="username" required
-               minlength="<?= MIN_USERNAME_LEN ?>" maxlength="<?= MAX_USERNAME_LEN ?>">
-    </label>
-    <br><br>
+                <div class="mt-2">
+                    <label>Username</label>
+                    <input type="text" name="username" required minlength="<?= MIN_USERNAME_LEN ?>"
+                        maxlength="<?= MAX_USERNAME_LEN ?>">
+                </div>
 
-    <label>
-        Email:
-        <input type="email" name="email" required maxlength="<?= MAX_EMAIL_LEN ?>">
-    </label>
-    <br><br>
+                <div class="mt-2">
+                    <label>Email</label>
+                    <input type="email" name="email" required maxlength="<?= MAX_EMAIL_LEN ?>">
+                </div>
 
-    <label>
-        Password:
-        <input type="password" name="password" required
-               minlength="<?= MIN_PASSWORD_LEN ?>" maxlength="<?= MAX_PASSWORD_LEN ?>">
-    </label>
-    <br><br>
+                <div class="mt-2">
+                    <label>Password</label>
+                    <input type="password" name="password" required minlength="<?= MIN_PASSWORD_LEN ?>"
+                        maxlength="<?= MAX_PASSWORD_LEN ?>">
+                </div>
 
-    <label>
-        Confirm Password:
-        <input type="password" name="confirm_password" required>
-    </label>
-    <br><br>
+                <div class="mt-2">
+                    <label>Confirm Password</label>
+                    <input type="password" name="confirm_password" required>
+                </div>
 
-    <small><?= escape_output(password_requirements()) ?></small>
-    <br><br>
+                <small class="text-muted mt-2 d-flex"><?= escape_output(password_requirements()) ?></small>
 
-    <button type="submit">Register</button>
-</form>
+                <button type="submit" class="btn-primary mt-4">Create Account</button>
+            </form>
 
-<br>
-<a href="/login.php">Go to Login</a>
+            <div class="text-center mt-4">
+                <a href="/login.php" class="text-muted">Already have an account? <span
+                        class="text-cyan">Login</span></a>
+            </div>
+        </div>
+    </div>
 
 </body>
+
 </html>

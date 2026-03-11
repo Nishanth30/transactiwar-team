@@ -8,49 +8,62 @@ require_once __DIR__ . '/../includes/profile_view_logic.php';
 if (file_exists(__DIR__ . '/../includes/header.php')) {
     require_once __DIR__ . '/../includes/header.php';
     send_security_headers();
-
-}
-else {
-    echo "<!DOCTYPE html><html><head><title>Agent Profile</title></head><body>";
 }
 ?>
+<!DOCTYPE html>
+<html lang="en">
 
-<?php include("header.html"); ?>
+<head>
+    <meta charset="UTF-8">
+    <title>Transactiwar | Agent Profile</title>
+</head>
 
-<div style="max-width: 600px; margin: 40px auto; font-family: sans-serif;">
-    
-    <h1>Agent: <?php echo $profileData['username']; ?></h1>
-    <p style="color: gray; font-family: monospace;">
-        Public Agent ID: <?php echo $profileData['uuid']; ?>
-    </p>
-    
-    <img src="serve_image.php?file=<?php echo $profileData['image']; ?>" width="150" style="border-radius: 8px;" alt="Profile Pic">
-    
-    <div style="margin-top: 20px; padding: 15px; background: #f4f4f4; border-radius: 5px;">
-        <h3>Operational Bio</h3>
-        <p><?php echo $profileData['bio']; ?></p>
+<body>
+
+    <?php include("header.html"); ?>
+
+    <div class="container">
+        <div class="card" style="text-align: center;">
+            <h1 class="text-glow">Agent: <?php echo $profileData['username']; ?></h1>
+            <p class="text-muted" style="font-family: 'Fira Code', monospace; margin-bottom: 1.5rem;">
+                Public ID: <?php echo $profileData['uuid']; ?>
+            </p>
+
+            <img src="serve_image.php?file=<?php echo $profileData['image']; ?>" width="150"
+                style="border-radius: 50%; border: 3px solid var(--primary-cyan); box-shadow: 0 0 15px rgba(0,240,255,0.4); margin-bottom: 2rem;"
+                alt="Profile Pic">
+
+            <div class="card" style="margin-top: 20px; text-align: left; background: rgba(0,0,0,0.3); border: none;">
+                <h3 class="text-cyan mb-2">Operational Bio</h3>
+                <p><?php echo nl2br($profileData['bio']); ?></p>
+            </div>
+
+            <?php if ($profileData['is_mine']): ?>
+
+                <div class="mt-4"
+                    style="padding: 1.5rem; background: rgba(16, 185, 129, 0.1); border-left: 4px solid var(--success); text-align: left; border-radius: 6px;">
+                    <strong>Secure Funds:</strong> ₹<?php echo $profileData['balance_rupees']; ?>
+                </div>
+
+                <div class="mt-4">
+                    <a href="profile.php" class="btn btn-primary"
+                        style="text-decoration: none; padding: 0.8rem 1.5rem; display: inline-block;">Edit My Profile</a>
+                </div>
+
+            <?php else: ?>
+
+                <div class="mt-4">
+                    <a href="payment_page.php?target_uuid=<?php echo $profileData['uuid']; ?>" class="btn btn-primary"
+                        style="text-decoration:none; padding: 0.8rem 1.5rem; display: inline-block;">Initiate Transfer to
+                        Agent</a>
+                </div>
+
+            <?php endif; ?>
+
+        </div>
     </div>
 
-    <hr style="margin: 30px 0;">
-    
-    <?php if ($profileData['is_mine']): ?>
-        
-        <div style="padding: 15px; background: #e8f4f8; border-left: 4px solid #007bff; margin-bottom: 20px;">
-            <strong>Secure Funds:</strong> ₹<?php echo $profileData['balance_rupees']; ?>
-        </div>
-        
-        <a href="profile.php" style="padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">Edit My Profile</a>
-        
-    <?php
-else: ?>
-        
-        <a href="payment_page.php?target_uuid=<?php echo $profileData['uuid']; ?>" style="padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px;">Initiate Transfer to Agent</a>
-        
-    <?php
-endif; ?>
-
-</div>
-
-<?php include("footer.html"); ?>
+    <?php include("footer.html"); ?>
 </body>
+
 </html>

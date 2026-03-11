@@ -1,8 +1,6 @@
 <?php
 
 declare(strict_types=1);
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 require_once __DIR__ . '/../includes/header.php';
 send_security_headers();
 
@@ -24,45 +22,37 @@ if (isset($_SESSION['user_id'])) {
 /* Handle login submit */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    if (isIpBruteForcing()) {
-        logActivity(LOG_BRUTE_FORCE);
-        $error = 'Too many attempts. Please try again later.';
+    verifyCsrf();
+
+    $usernameOrEmail = post_str('identifier');
+    $password = $_POST['password'] ?? '';
+
+    if ($usernameOrEmail === '' || $password === '') {
+        $error = 'All fields are required.';
+        logActivity(LOG_INVALID_INPUT);
+
+    } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
+        $error = 'Invalid credentials.';
+        logActivity(LOG_INVALID_INPUT);
 
     } else {
+        try {
+            $success = login_user($pdo, $usernameOrEmail, $password);
 
-        verifyCsrf();
-
-        $usernameOrEmail = post_str('identifier');
-        $password        = $_POST['password'] ?? '';
-
-        if ($usernameOrEmail === '' || $password === '') {
-            $error = 'All fields are required.';
-            logActivity(LOG_INVALID_INPUT);
-
-        } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
-            $error = 'Invalid credentials.';
-            logActivity(LOG_INVALID_INPUT);
-
-        } else {
-            try {
-                $success = login_user($pdo, $usernameOrEmail, $password);
-
-                if ($success) {
-                    clearLoginAttempts(get_client_ip());
-                    logActivity(LOG_LOGIN_SUCCESS);
-                    header('Location: /index.php');
-                    exit;
-                } else {
-                    $error = 'Invalid credentials.';
-                    recordFailedLogin(get_client_ip());
-                    logActivity(LOG_LOGIN_FAIL);
-                }
-
-            } catch (Throwable $e) {
-                error_log($e->getMessage());
-                $error = 'Login failed.';
-                logActivity(LOG_INVALID_INPUT);
+            if ($success === true) {
+                header('Location: /index.php');
+                exit;
+            } elseif ($success === 'locked') {
+                // Hard lock only triggers at 20 attempts (30 min timeout)
+                $error = 'Account temporarily locked. Please try again later.';
+            } else {
+                $error = 'Invalid credentials.';
             }
+
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $error = 'Login failed.';
+            logActivity(LOG_INVALID_INPUT);
         }
     }
 }
@@ -74,40 +64,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Login</title>
+    <title>Transactiwar | Login</title>
     <?= csrfMeta() ?>
+    <link rel="stylesheet" href="/assets/css/style.css">
 </head>
+
 <body>
 
-<h2>Login</h2>
+    <div class="container auth-container">
+        <div class="card">
+            <h2 class="text-center text-glow">Login</h2>
 
-<?php if ($error !== ''): ?>
-    <p style="color:red;">
-        <?= escape_output($error) ?>
-    </p>
-<?php endif; ?>
+            <?php if ($error !== ''): ?>
+                <div class="error-msg">
+                    <?= escape_output($error) ?>
+                </div>
+            <?php endif; ?>
 
-<form method="POST" action="">
-    <?= csrfField() ?>
+            <form method="POST" action="">
+                <?= csrfField() ?>
 
-    <label>
-        Username or Email:
-        <input type="text" name="identifier" required>
-    </label>
-    <br><br>
+                <div class="mt-2">
+                    <label>Username or Email</label>
+                    <input type="text" name="identifier" required>
+                </div>
 
-    <label>
-        Password:
-        <input type="password" name="password" required>
-    </label>
-    <br><br>
+                <div class="mt-2">
+                    <label>Password</label>
+                    <input type="password" name="password" required>
+                </div>
 
-    <button type="submit">Login</button>
-</form>
+                <button type="submit" class="btn-primary mt-4">Login</button>
+            </form>
 
-<a href="/register.php">Go to Register</a>
+            <div class="text-center mt-4">
+                <a href="/register.php" class="text-muted">Need an account? <span class="text-cyan">Register
+                        here</span></a>
+            </div>
+        </div>
+    </div>
 
 </body>
+
 </html>

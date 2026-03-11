@@ -10,13 +10,16 @@ require_once __DIR__ . '/../includes/logger.php'; // 🆕 ADDED: The new Logger 
 // 2. BEAVER'S AUTHENTICATION
 // This single function handles session_start, checks if logged in, 
 // AND does Beaver's IP-binding security check. If it fails, Beaver kills the script.
-require_login(); 
+require_login();
+
 
 // If require_login() passes, we are mathematically guaranteed to have this:
-$viewer_internal_id = $_SESSION['user_id']; 
+$viewer_internal_id = $_SESSION['user_id'];
+
 
 // 3. RESOLUTION WATERFALL (Using Dog's Sanitizers)
-$target_uuid     = sanitize_public_user_id($_GET['id'] ?? null); 
+$target_uuid = sanitize_public_user_id($_GET['id'] ?? null);
+
 $target_username = clean_input($_GET['username'] ?? '');
 
 $sql = "";
@@ -32,11 +35,13 @@ if ($target_uuid) {
     // Search by UUID
     $sql = $base_select . "WHERE public_id = :val LIMIT 1";
     $bind_val = $target_uuid;
-} elseif ($target_username) {
+}
+elseif ($target_username) {
     // Search by Username
     $sql = $base_select . "WHERE username = :val LIMIT 1";
     $bind_val = $target_username;
-} else {
+}
+else {
     // Default to Self
     $sql = $base_select . "WHERE id = :val LIMIT 1";
     $bind_val = $viewer_internal_id;
@@ -51,10 +56,11 @@ try {
         ':viewer_id' => $viewer_internal_id
     ]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
+}
+catch (PDOException $e) {
     // 🆕 UPGRADED: Log the system failure via the framework before dying
     error_log("Profile View DB Error: " . $e->getMessage());
-    logSecurityEvent(LOG_SUSPICIOUS, "Database error on profile view"); 
+    logSecurityEvent(LOG_SUSPICIOUS, "Database error on profile view");
     die("A system error occurred. Our engineers have been notified.");
 }
 
@@ -68,10 +74,11 @@ if (!$user) {
 // We prep the data so the UI dev literally cannot cause an XSS attack.
 $profileData = [
     'username' => escape_output($user['username']),
-    'bio'      => escape_output($user['bio'] ?? 'No operational biography provided.'),
-    'image'    => escape_output(basename((string)($user['profile_image_path'] ?? 'default_agent.png'))),
-    'uuid'     => escape_output($user['public_id']),
-    'is_mine'  => ($viewer_internal_id === (int)$user['id']) 
+    'bio' => escape_output($user['bio'] ?? 'No operational biography provided.'),
+    'image' => escape_output(basename((string)($user['profile_image_path'] ?? 'default_agent.png'))),
+    'uuid' => escape_output($user['public_id']),
+    'is_mine' => ($viewer_internal_id === (int)$user['id'])
+
 ];
 
 // 6. BALANCE PRIVACY GATE
@@ -83,10 +90,13 @@ if ($profileData['is_mine']) {
 // 🆕 UPGRADED: Determine if they are viewing themselves or snooping on someone else
 if ($profileData['is_mine']) {
     logActivity(LOG_PROFILE_VIEW);
-} else {
-    // Append the target's username so the monitor shows WHO they are looking at
-    logActivity(LOG_PROFILE_OTHER . ':' . $profileData['username']);
+}
+else {
+    // Strip newlines — prevents log injection (username with \n could forge log entries)
+    $safeForLog = preg_replace('/[\r\n\t]/', '_', $profileData['username']);
+    logActivity(LOG_PROFILE_OTHER . ':' . $safeForLog);
 }
 
-unset($user); 
+unset($user);
+
 ?>
