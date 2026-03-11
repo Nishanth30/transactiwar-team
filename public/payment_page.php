@@ -1,7 +1,11 @@
 <?php
+
+declare(strict_types=1);
+
 require_once __DIR__ . '/../includes/header.php';
 send_security_headers();
 no_cache();
+
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../includes/csrf.php';
@@ -11,73 +15,57 @@ require_once __DIR__ . '/../includes/auth.php';
 
 require_login();
 
-// If form was submitted, hand off to backend processor
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Keep transfer execution in a dedicated include so this file remains
+    // "render form on GET, process on POST".
     require_once __DIR__ . '/../includes/process_payment.php';
     exit;
 }
 
-// ── GET — validate UUID from URL ──────────────────────────────────
+// Receiver identity is always addressed via public UUID, never internal numeric ID.
 $targetUuid = sanitize_uuid(get_str('target_uuid'));
-
 if ($targetUuid === null) {
     header('Location: ' . sanitize_header('/index.php'));
     exit;
 }
 
-// ── Fetch receiver from DB by UUID ───────────────────────────────
-// Username is NEVER taken from the URL — only from the DB row the
-// UUID resolves to. Spoofing &username=abc in the URL has no effect.
-$stmt = $pdo->prepare(
-    "SELECT id, username FROM users WHERE public_id = ? LIMIT 1"
-);
+$stmt = $pdo->prepare('SELECT id, username FROM users WHERE public_id = ? LIMIT 1');
 $stmt->execute([$targetUuid]);
 $receiver = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$receiver) {
-    // UUID doesn't match any account — abort
     header('Location: ' . sanitize_header('/index.php'));
     exit;
 }
 
-$receiverUsername = $receiver['username'];   // authoritative, from DB
+$receiverUsername = $receiver['username'];
 
-// ── Fetch sender balance ──────────────────────────────────────────
-$stmt = $pdo->prepare(
-    "SELECT balance_paise FROM users WHERE id = ? LIMIT 1"
-);
+// Show live sender balance to reduce accidental over-transfer attempts.
+$stmt = $pdo->prepare('SELECT balance_paise FROM users WHERE id = ? LIMIT 1');
 $stmt->execute([$_SESSION['user_id']]);
 $sender = $stmt->fetch(PDO::FETCH_ASSOC);
 $balanceRupees = number_format($sender['balance_paise'] / 100, 2);
 
 logActivity(LOG_PROFILE_OTHER);
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <title>Transactiwar | Pay <?= escape_output($receiverUsername) ?></title>
+    <?php render_page_head('Transactiwar | Pay ' . $receiverUsername); ?>
 </head>
-
 <body>
-
     <?php include __DIR__ . '/header.html'; ?>
 
     <div class="container auth-container">
         <div class="card">
             <h2 class="text-glow text-center">Transfer Funds</h2>
 
-            <div class="card"
-                style="background: rgba(0,0,0,0.3); border: none; margin-bottom: 2rem; text-align: center; padding: 1.5rem;">
+            <div class="card" style="background: rgba(0,0,0,0.3); border: none; margin-bottom: 2rem; text-align: center; padding: 1.5rem;">
                 <p class="text-muted" style="margin: 0; font-size: 0.9rem;">Target Agent</p>
                 <h3 class="text-cyan" style="margin: 0.5rem 0 1.5rem 0;"><?= escape_output($receiverUsername) ?></h3>
-                <div
-                    style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
                     <span class="text-muted" style="font-size: 0.9rem;">Your secure balance:</span>
-                    <strong class="text-success"
-                        style="font-family: 'Fira Code', monospace; font-size: 1.1rem; color: var(--success);">₹<?= escape_output($balanceRupees) ?></strong>
+                    <strong class="text-success" style="font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace; font-size: 1.1rem; color: var(--success);">₹<?= escape_output($balanceRupees) ?></strong>
                 </div>
             </div>
 
@@ -103,5 +91,4 @@ logActivity(LOG_PROFILE_OTHER);
 
     <?php include __DIR__ . '/footer.html'; ?>
 </body>
-
 </html>
