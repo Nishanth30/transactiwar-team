@@ -21,7 +21,7 @@ function build_csp(string $nonce): string
     $directives = [
         "default-src 'self'",
         "script-src 'self' 'nonce-{$nonce}' 'strict-dynamic'",
-        "style-src 'self' 'nonce-{$nonce}'",
+        "style-src 'self'",
         "img-src 'self' data: blob:",
         "font-src 'self' data:",
         "connect-src 'self'",
@@ -208,7 +208,7 @@ function debug_headers(): void
         return;
     }
 
-    echo '<pre style="background:#1a1a1a;color:#00ff00;padding:20px;">';
+    echo '<pre class="debug-headers-pre">';
     echo "=== SECURITY HEADERS SET ===\n\n";
     foreach (headers_list() as $header) {
         echo htmlspecialchars($header, ENT_QUOTES, 'UTF-8') . "\n";

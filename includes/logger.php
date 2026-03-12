@@ -857,26 +857,12 @@ function renderMonitorDashboard(): void {
         <meta charset="UTF-8">
         <meta http-equiv="refresh" content="15"> <!-- auto refresh every 15s -->
         <title>Monitor Dashboard</title>
-        <style>
-            body  { font-family: monospace; background: #0d0d0d; color: #00ff00; padding: 20px; }
-            h2    { color: #ff6600; border-bottom: 1px solid #333; padding-bottom: 5px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 13px; }
-            th    { background: #1a1a1a; color: #ff6600; padding: 8px; text-align: left; }
-            td    { padding: 6px 8px; border-bottom: 1px solid #1a1a1a; }
-            tr:hover { background: #111; }
-            .attack  { color: #ff4444; }
-            .success { color: #00ff00; }
-            .info    { color: #aaaaaa; }
-            .badge   { padding: 2px 6px; border-radius: 3px; font-size: 11px; }
-            .red     { background: #4a0000; color: #ff4444; }
-            .green   { background: #004a00; color: #00ff00; }
-            .yellow  { background: #4a4a00; color: #ffff00; }
-        </style>
+        <link rel="stylesheet" href="/assets/css/monitor.css">
     </head>
     <body>
 
     <h1>🛡️ War Game Monitor
-        <small style="font-size:14px; color:#666;">
+        <small class="monitor-time">
             Auto-refresh: 15s | <?= date('H:i:s') ?>
         </small>
     </h1>

@@ -44,7 +44,8 @@ try {
             t.receiver_comment,
             t.created_at,
             CASE WHEN t.sender_id = :uid THEN "sent" ELSE "received" END AS direction,
-            CASE WHEN t.sender_id = :uid THEN r.public_id ELSE s.public_id END AS counterparty_id
+            CASE WHEN t.sender_id = :uid THEN r.public_id ELSE s.public_id END AS counterparty_id,
+            CASE WHEN t.sender_id = :uid THEN r.username ELSE s.username END AS counterparty_username
          FROM transactions t
          JOIN users s ON s.id = t.sender_id
          JOIN users r ON r.id = t.receiver_id
@@ -83,7 +84,7 @@ logActivity(LOG_PAGE_VIEW . ':transaction_history');
             <?php if (!empty($dbError)): ?>
                 <div class="error-msg">Error loading transactions. Please try again.</div>
             <?php elseif (empty($rows)): ?>
-                <div class="text-muted" style="text-align:center; padding: 2rem;">No operational transactions found.</div>
+                <div class="text-muted empty-ledger">No operational transactions found.</div>
             <?php else: ?>
                 <p class="text-muted">Showing <?= count($rows) ?> of <?= $total ?> transactions.</p>
 
@@ -108,24 +109,28 @@ logActivity(LOG_PAGE_VIEW . ':transaction_history');
                                 $dirColor = $tx['direction'] === 'sent' ? 'var(--error)' : 'var(--success)';
                                 ?>
                                 <tr>
-                                    <td class="text-muted" style="font-size:0.8rem; font-family:'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;">
+                                    <td class="text-muted tx-table-id font-mono">
                                         <?= escape_output($tx['id']) ?>
                                     </td>
-                                    <td style="color: <?= $dirColor ?>; text-transform: uppercase; font-size: 0.8rem; font-weight:bold; letter-spacing:1px;">
+                                    <td class="tx-table-dir <?= $tx['direction'] === 'sent' ? 'tx-table-dir-sent' : 'tx-table-dir-received' ?>">
                                         <?= escape_output($tx['direction']) ?>
                                     </td>
                                     <td>
-                                        <a href="<?= $profileHref ?>" style="font-family:'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;">
-                                            <?= escape_output($tx['counterparty_id']) ?>
+                                        <a href="<?= $profileHref ?>" class="tx-counterparty-link">
+                                            <?= escape_output($tx['counterparty_username']) ?>
                                         </a>
+                                        <br>
+                                        <small class="text-muted font-mono" style="font-size: 0.75rem;">
+                                            <?= escape_output($tx['counterparty_id']) ?>
+                                        </small>
                                     </td>
-                                    <td style="font-family:'JetBrains Mono', 'SFMono-Regular', Consolas, monospace; font-weight:bold;">
+                                    <td class="font-mono tx-table-amt">
                                         ₹<?= escape_output(number_format((int) $tx['amount_paise'] / 100, 2)) ?>
                                     </td>
                                     <td class="text-muted">
                                         <?= $tx['receiver_comment'] !== null ? escape_output($tx['receiver_comment']) : '—' ?>
                                     </td>
-                                    <td class="text-muted" style="font-size:0.85rem;">
+                                    <td class="text-muted tx-table-date">
                                         <?= escape_output($tx['created_at']) ?>
                                     </td>
                                 </tr>
@@ -134,14 +139,14 @@ logActivity(LOG_PAGE_VIEW . ':transaction_history');
                     </table>
                 </div>
 
-                <div class="mt-4" style="display:flex; justify-content:space-between; align-items:center;">
+                <div class="mt-4 pagination-controls">
                     <span class="text-muted">Page <?= (int) $page ?> of <?= (int) $totalPages ?></span>
                     <div>
                         <?php if ($page > 1): ?>
                             <a href="<?= escape_attr('/transaction_history.php?page=' . ($page - 1)) ?>" class="btn btn-sm">← Previous</a>
                         <?php endif; ?>
                         <?php if ($page < $totalPages): ?>
-                            <a href="<?= escape_attr('/transaction_history.php?page=' . ($page + 1)) ?>" class="btn btn-sm" style="margin-left:0.5rem;">Next →</a>
+                            <a href="<?= escape_attr('/transaction_history.php?page=' . ($page + 1)) ?>" class="btn btn-sm ml-2">Next →</a>
                         <?php endif; ?>
                     </div>
                 </div>

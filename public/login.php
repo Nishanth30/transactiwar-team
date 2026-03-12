@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     <?php render_page_head('Transactiwar | Login', csrfMeta()); ?>
 </head>
 <body>
-    <div class="container auth-container">
+    <div class="container auth-container container-login">
         <div class="card">
             <h2 class="text-center text-glow">Login</h2>
 

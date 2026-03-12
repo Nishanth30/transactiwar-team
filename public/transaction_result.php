@@ -34,18 +34,18 @@ $isSuccess = ($result === 'successful');
     <?php include __DIR__ . '/header.html'; ?>
 
     <div class="container auth-container">
-        <div class="card text-center" style="padding: 3rem 2rem;">
+        <div class="card text-center result-card">
             <?php if ($isSuccess): ?>
-                <div style="font-size: 4rem; text-shadow: 0 0 20px rgba(16, 185, 129, 0.8); margin-bottom: 1rem;">✅</div>
-                <h2 class="text-success text-glow" style="color: var(--success);">Transaction Successful</h2>
-                <p class="text-muted" style="font-size: 1.1rem; margin-bottom: 2rem;">Your transfer has been completed securely.</p>
+                <div class="result-icon-success">✅</div>
+                <h2 class="text-success text-glow">Transaction Successful</h2>
+                <p class="text-muted result-text">Your transfer has been completed securely.</p>
             <?php else: ?>
-                <div style="font-size: 4rem; text-shadow: 0 0 20px rgba(239, 68, 68, 0.8); margin-bottom: 1rem;">❌</div>
-                <h2 class="text-error text-glow" style="color: var(--error);">Transfer Failed</h2>
-                <p class="text-muted" style="font-size: 1.1rem; margin-bottom: 2rem;"><?= escape_output($error ?? 'Transfer failed. Please try again.') ?></p>
+                <div class="result-icon-error">❌</div>
+                <h2 class="text-error text-glow">Transfer Failed</h2>
+                <p class="text-muted result-text"><?= escape_output($error ?? 'Transfer failed. Please try again.') ?></p>
             <?php endif; ?>
 
-            <a href="/transaction_history.php" class="btn-primary" style="display:inline-block; font-size:1rem; padding: 0.8rem 2rem;">View Ledger</a>
+            <a href="/transaction_history.php" class="btn-primary btn-ledger">View Ledger</a>
         </div>
     </div>
 

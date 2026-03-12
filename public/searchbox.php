@@ -28,11 +28,11 @@ unset($_SESSION['transfer_complete']);
         <div class="card">
             <h2 class="text-glow">Search Users</h2>
 
-            <form method="GET" action="/searchbox.php" style="flex-direction: row; align-items: flex-end;">
-                <div style="flex: 1;">
+            <form method="GET" action="/searchbox.php" class="search-form">
+                <div class="search-input-wrapper">
                     <input type="text" name="q" id="searchbar" placeholder="Enter username...">
                 </div>
-                <button type="submit" class="btn-primary" style="margin-top:0;">Search</button>
+                <button type="submit" class="btn-primary btn-search">Search</button>
             </form>
 
             <div class="results-container mt-4">
@@ -85,10 +85,10 @@ unset($_SESSION['transfer_complete']);
                             $safeUsernameHref = escape_attr("view_profile.php?username=" . $urlUsername);
                             $safePublicIdHref = escape_attr("view_profile.php?id=" . $urlPublicId);
 
-            echo '<a href="' . $safePublicIdHref . '" style="text-decoration:none;">';
-            echo '<div class="card" style="padding: 1.5rem; text-align:center; transition: all 0.3s ease;">';
-            echo '<h3 class="text-cyan" style="margin:0;">' . $safeUsername . '</h3>';
-            echo '<p class="text-muted" style="margin-top:0.5rem; font-size: 0.8rem;">ID: ' . $safePublicId . '</p>';
+            echo '<a href="' . $safePublicIdHref . '" class="search-result-link">';
+            echo '<div class="card search-result-card">';
+            echo '<h3 class="text-cyan search-result-title">' . $safeUsername . '</h3>';
+            echo '<p class="text-muted search-result-id">ID: ' . $safePublicId . '</p>';
             echo '</div>';
             echo '</a>';
         }

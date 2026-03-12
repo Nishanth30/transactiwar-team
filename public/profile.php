@@ -26,9 +26,9 @@ if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container auth-container mt-5">
+    <div class="container auth-container container-profile mt-5">
         <div class="card p-4 shadow-lg">
-            <h2 class="text-glow text-center mb-4">Update Operational Profile</h2>
+            <h2 class="text-glow mb-4">Update Operational Profile</h2>
 
             <?php if ($flash_success_message !== ''): ?>
                 <div class="alert alert-success">
@@ -42,7 +42,7 @@ if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
                 </div>
             <?php endif; ?>
 
-            <div class="text-center mb-4">
+            <div class="mb-4">
                 <p class="text-muted font-monospace mb-2">Current Operational Avatar</p>
                 <div class="avatar-wrapper d-inline-block">
                     <img src="/serve_image.php?file=<?= $display_image ?>" width="120" height="120" class="rounded-circle avatar-glow" alt="Current Profile Picture">

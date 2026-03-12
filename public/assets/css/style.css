@@ -4,9 +4,9 @@
 */
 
 :root {
-    --text: #F1F5F9;
-    --subtext: rgba(241, 245, 249, 0.6);
-    --muted: rgba(241, 245, 249, 0.4);
+    --text: #ffffff;
+    --subtext: #cbd5e1;
+    --muted: #94a3b8;
     --glass: rgba(255, 255, 255, 0.06);
     --glass-border: rgba(255, 255, 255, 0.12);
     --glass-hover: rgba(255, 255, 255, 0.1);
@@ -112,6 +112,7 @@ h2 {
 
 .text-muted {
     color: var(--muted);
+    margin-bottom: 5px;
 }
 
 .text-cyan {
@@ -120,17 +121,22 @@ h2 {
 
 /* Layout */
 .container {
-    max-width: 960px;
+    width: 100%;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 2rem;
     position: relative;
     z-index: 1;
 }
 
+/* Auth containers should not constrict larger tables or contents */
 .auth-container {
-    max-width: 450px;
+    max-width: 1000px;
+    /* Matched to Transaction History width */
     margin: 4rem auto;
+    width: 100%;
 }
+
 
 /* Navigation */
 header,
@@ -148,24 +154,43 @@ header,
     z-index: 10;
 }
 
+header h2 a,
+.app-nav h2 a {
+    display: block;
+    /* allow vertical movement */
+    text-decoration: none;
+    color: #ffffff;
+    /* Bright white for better contrast */
+    text-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
+    position: relative;
+    top: 6px;
+    /* adjust this (4px–8px) to pull logo down */
+}
+
 .nav-links {
     display: flex;
     gap: 4px;
 }
 
 .nav-links a {
-    color: var(--subtext);
+    color: #ffffff;
+    /* Brightened text */
     text-decoration: none;
-    font-size: 13px;
-    padding: 7px 14px;
+    font-size: 14px;
+    /* Slightly larger text */
+    font-weight: 500;
+    padding: 8px 16px;
     border-radius: 10px;
     transition: all 0.2s;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    /* Subtle glow for readability */
 }
 
 .nav-links a.active,
 .nav-links a:hover {
     background: var(--glass-hover);
-    color: var(--text);
+    color: #ffffff;
+    text-shadow: 0 0 15px rgba(255, 255, 255, 0.6);
 }
 
 /* Cards (Glass Components) */
@@ -227,7 +252,8 @@ textarea:focus {
 
 /* Buttons */
 .btn-primary,
-button[type="submit"] {
+button[type="submit"],
+.btn {
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.8), rgba(139, 92, 246, 0.8));
     border: 1px solid rgba(129, 140, 248, 0.3);
     color: #fff;
@@ -240,13 +266,22 @@ button[type="submit"] {
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 15px rgba(99, 102, 241, 0.25);
     transition: all 0.2s;
+    text-decoration: none;
+    /* Strip underlines for `a` tags acting as buttons */
+    display: inline-block;
+    /* Ensure `a` tags respect padding */
+    text-align: center;
+    margin: 10px;
 }
 
 .btn-primary:hover,
-button[type="submit"]:hover {
+button[type="submit"]:hover,
+.btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
     background: linear-gradient(135deg, rgba(129, 140, 248, 0.9), rgba(167, 139, 250, 0.9));
+    color: #fff;
+    text-decoration: none;
 }
 
 .btn-sm {
@@ -432,9 +467,318 @@ th {
 }
 
 .rules-section ul li::before {
-    content: '›';
+    content: '-';
     position: absolute;
     left: 4px;
     color: var(--accent);
     font-weight: bold;
-}
+}
+
+/* =========================================================
+   EXTRACTED INLINE STYLES (CSP COMPLIANCE)
+   ========================================================= */
+
+/* Header */
+.header-logo-link {
+    color: inherit;
+    text-decoration: none;
+    align-self: flex-end;
+    padding-bottom: 0px;
+}
+
+/* Container Modifiers */
+.container-login {
+    max-width: 450px !important;
+}
+
+.container-register {
+    max-width: 500px !important;
+}
+
+.container-profile {
+    max-width: 600px !important;
+}
+
+.container-confirm {
+    max-width: 400px !important;
+    margin: 6rem auto;
+}
+
+/* View Profile */
+.profile-bio-box {
+    max-width: 600px;
+}
+
+.profile-bio-text {
+    line-height: 1.6;
+}
+
+.profile-balance-box {
+    max-width: 600px;
+    border-left-width: 4px;
+}
+
+/* NEW: stronger balance emphasis on own profile */
+.profile-funds-box {
+    display: inline-block;
+    padding: 1.25rem 1.5rem;
+    border-radius: 16px;
+    background: rgba(52, 211, 153, 0.08);
+    border: 1px solid rgba(52, 211, 153, 0.22);
+    box-shadow:
+        0 0 0 1px rgba(52, 211, 153, 0.08) inset,
+        0 10px 30px rgba(52, 211, 153, 0.08);
+}
+
+.profile-funds-label {
+    color: #A7F3D0;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.profile-balance-large {
+    display: inline-block;
+    font-size: clamp(2.2rem, 5vw, 3.5rem);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}
+
+.profile-balance-emphasis {
+    color: var(--green);
+    text-shadow:
+        0 0 10px rgba(52, 211, 153, 0.45),
+        0 0 24px rgba(52, 211, 153, 0.22);
+}
+
+/* Confirm Logout & Transaction Result Cards */
+.logout-card,
+.result-card {
+    padding: 3rem 2rem;
+}
+
+.logout-icon {
+    font-size: 4rem;
+    text-shadow: 0 0 20px rgba(248, 113, 113, 0.8);
+    margin-bottom: 1rem;
+}
+
+.result-icon-success {
+    font-size: 4rem;
+    text-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
+    margin-bottom: 1rem;
+}
+
+.result-icon-error {
+    font-size: 4rem;
+    text-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+    margin-bottom: 1rem;
+}
+
+.logout-text,
+.result-text {
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+}
+
+.text-danger-glow {
+    color: #F87171;
+}
+
+.logout-actions {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
+}
+
+.btn-stay {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    border: 1px solid var(--glass-border);
+    text-align: center;
+}
+
+.btn-leave {
+    flex: 1;
+    background: rgba(248, 113, 113, 0.2);
+    color: #F87171;
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    text-align: center;
+}
+
+.btn-ledger {
+    display: inline-block;
+    font-size: 1rem;
+    padding: 0.8rem 2rem;
+}
+
+/* Payment Page */
+.payment-target-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: none;
+    margin-bottom: 2rem;
+    text-align: center;
+    padding: 1.5rem;
+}
+
+.payment-target-label {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.payment-target-name {
+    margin: 0.5rem 0 1.5rem 0;
+}
+
+.payment-balance-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.payment-balance-label {
+    font-size: 0.9rem;
+}
+
+.payment-amount-hint {
+    display: block;
+    margin-top: 0.5rem;
+}
+
+.btn-block {
+    width: 100%;
+}
+
+/* Transaction History */
+.empty-ledger {
+    text-align: center;
+    padding: 2rem;
+}
+
+.font-mono {
+    font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+.tx-table-id {
+    font-size: 0.8rem;
+}
+
+.tx-table-dir {
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.tx-table-dir-sent {
+    color: var(--error);
+}
+
+.tx-table-dir-received {
+    color: var(--success);
+}
+
+.tx-counterparty-link {
+    color: #58a6ff;
+    font-weight: bold;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.tx-counterparty-link:hover {
+    text-decoration: underline;
+    color: #79c0ff;
+}
+
+.tx-table-amt {
+    font-weight: bold;
+}
+
+.pagination-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ml-2 {
+    margin-left: 0.5rem;
+}
+
+/* Searchbox */
+.search-form {
+    flex-direction: row;
+    align-items: flex-end;
+}
+
+.search-input-wrapper {
+    flex: 1;
+}
+
+.btn-search {
+    margin-top: 0;
+}
+
+.search-result-link {
+    text-decoration: none;
+    display: block;
+}
+
+.search-result-card {
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.search-result-title {
+    margin: 0;
+}
+
+.search-result-id {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* Debuggers */
+.debug-headers-pre {
+    background: #1a1a1a;
+    color: #00ff00;
+    padding: 20px;
+}
+
+.profile-main-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 5rem;
+    align-items: start;
+}
+
+.profile-left-column {
+    min-width: 0;
+}
+
+.profile-right-column {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding-top: 0.25rem;
+}
+
+.profile-bio-box {
+    max-width: 100%;
+}
+
+@media (max-width: 900px) {
+    .profile-main-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .profile-right-column {
+        align-items: flex-start;
+    }
+}

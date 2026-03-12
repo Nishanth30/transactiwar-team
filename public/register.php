@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php render_page_head('Transactiwar | Register', csrfMeta()); ?>
 </head>
 <body>
-    <div class="container auth-container">
+    <div class="container auth-container container-register">
         <div class="card">
             <h2 class="text-center text-glow">Register</h2>
 
