@@ -387,7 +387,7 @@ button[type="submit"]:hover,
 }
 
 .mt-4 {
-    margin-top: 2rem;
+    margin-top: 0rem;
 }
 
 .w-100 {
@@ -497,6 +497,11 @@ th {
 
 .container-profile {
     max-width: 600px !important;
+    margin: 0rem auto !important;
+}
+
+.container-password {
+    max-width: 500px !important;
 }
 
 .container-confirm {
@@ -771,6 +776,16 @@ th {
 
 .profile-bio-box {
     max-width: 100%;
+}
+
+.account-security-panel {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--glass-border);
+}
+
+.account-security-panel .btn {
+    margin: 0;
 }
 
 @media (max-width: 900px) {

@@ -9,6 +9,10 @@ const MAX_LOGIN_ATTEMPTS = 20;     // hard lock threshold — only last resort
 const LOCKOUT_SECONDS = 1800;      // 30 min hard lock — only after 20 attempts
 const ATTEMPT_WINDOW = 900;        // reset counter after 15 min of inactivity
 const BACKOFF_CAP_SECONDS = 30;    // max exponential backoff delay per attempt
+const MAX_PASSWORD_CHANGE_ATTEMPTS = 5;
+const PASSWORD_CHANGE_LOCKOUT_SECONDS = 900;
+const PASSWORD_CHANGE_ATTEMPT_WINDOW = 900;
+const PASSWORD_CHANGE_BACKOFF_CAP_SECONDS = 16;
 
 /*
  * Real bcrypt hash used when user is missing.
@@ -154,6 +158,197 @@ function get_lockout_remaining(PDO $pdo, string $ip): int
     }
 
     return $row['locked_until'] - $now;
+}
+
+function password_change_attempt_key(int $userId, string $ip): string
+{
+    $ipHash = substr(hash('sha256', $ip), 0, 16);
+    return 'pwc:' . $userId . ':' . $ipHash;
+}
+
+function is_password_change_locked(PDO $pdo, int $userId, string $ip): bool
+{
+    $now = time();
+    $attemptKey = password_change_attempt_key($userId, $ip);
+    $stmt = $pdo->prepare("
+        SELECT locked_until
+        FROM login_attempts
+        WHERE ip = :ip
+        LIMIT 1
+    ");
+    $stmt->execute([
+        'ip' => $attemptKey,
+    ]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $row && (int) $row['locked_until'] > $now;
+}
+
+function record_password_change_failed_attempt(PDO $pdo, int $userId, string $ip): void
+{
+    $now = time();
+    $attemptKey = password_change_attempt_key($userId, $ip);
+
+    $pdo->prepare("
+        INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
+        VALUES (:ip, 1, 0, :now)
+        ON DUPLICATE KEY UPDATE
+            attempts     = IF(last_attempt < :window, 1, attempts + 1),
+            locked_until = IF(
+                             IF(last_attempt < :window, 1, attempts + 1) >= :max,
+                             :now + :lockout,
+                             locked_until
+                           ),
+            last_attempt = :now
+    ")->execute([
+        'ip' => $attemptKey,
+        'now' => $now,
+        'window' => $now - PASSWORD_CHANGE_ATTEMPT_WINDOW,
+        'max' => MAX_PASSWORD_CHANGE_ATTEMPTS,
+        'lockout' => PASSWORD_CHANGE_LOCKOUT_SECONDS,
+    ]);
+}
+
+function get_password_change_backoff_delay(PDO $pdo, int $userId, string $ip): int
+{
+    $attemptKey = password_change_attempt_key($userId, $ip);
+    $stmt = $pdo->prepare("
+        SELECT attempts, last_attempt
+        FROM login_attempts
+        WHERE ip = :ip
+        LIMIT 1
+    ");
+    $stmt->execute([
+        'ip' => $attemptKey,
+    ]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row || (int) $row['attempts'] === 0) {
+        return 0;
+    }
+
+    if ((int) $row['last_attempt'] < time() - PASSWORD_CHANGE_ATTEMPT_WINDOW) {
+        return 0;
+    }
+
+    return (int) min(2 ** (int) $row['attempts'], PASSWORD_CHANGE_BACKOFF_CAP_SECONDS);
+}
+
+function clear_password_change_failed_attempts(PDO $pdo, int $userId, string $ip): void
+{
+    $attemptKey = password_change_attempt_key($userId, $ip);
+    $pdo->prepare("
+        DELETE FROM login_attempts
+        WHERE ip = :ip
+    ")->execute([
+        'ip' => $attemptKey,
+    ]);
+}
+
+function get_password_change_lockout_remaining(PDO $pdo, int $userId, string $ip): int
+{
+    $now = time();
+    $attemptKey = password_change_attempt_key($userId, $ip);
+    $stmt = $pdo->prepare("
+        SELECT locked_until
+        FROM login_attempts
+        WHERE ip = :ip
+        LIMIT 1
+    ");
+    $stmt->execute([
+        'ip' => $attemptKey,
+    ]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row || (int) $row['locked_until'] <= $now) {
+        return 0;
+    }
+
+    return (int) $row['locked_until'] - $now;
+}
+
+/*
+ * Change password for an authenticated user.
+ *
+ * Returns:
+ *   true              -> success
+ *   'locked'          -> temporary lockout active
+ *   'invalid_current' -> current password mismatch
+ *   'same_password'   -> new password equals current
+ *   false             -> unexpected failure
+ */
+function change_password_for_user(
+    PDO $pdo,
+    int $userId,
+    string $currentPassword,
+    string $newPassword,
+    string $ip
+): bool|string {
+    if (is_password_change_locked($pdo, $userId, $ip)) {
+        usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
+        return 'locked';
+    }
+
+    $backoffSeconds = get_password_change_backoff_delay($pdo, $userId, $ip);
+    if ($backoffSeconds > 0) {
+        sleep($backoffSeconds);
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare("
+            SELECT password_hash
+            FROM users
+            WHERE id = :id
+            FOR UPDATE
+        ");
+        $stmt->execute(['id' => $userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user || empty($user['password_hash'])) {
+            $pdo->rollBack();
+            return false;
+        }
+
+        $storedHash = (string) $user['password_hash'];
+        $currentMatches = password_verify($currentPassword, $storedHash);
+        usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
+
+        if (!$currentMatches) {
+            $pdo->rollBack();
+            record_password_change_failed_attempt($pdo, $userId, $ip);
+            return 'invalid_current';
+        }
+
+        if (password_verify($newPassword, $storedHash)) {
+            $pdo->rollBack();
+            return 'same_password';
+        }
+
+        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+        $updateStmt = $pdo->prepare("
+            UPDATE users
+            SET password_hash = :password_hash
+            WHERE id = :id
+            LIMIT 1
+        ");
+        $updateStmt->execute([
+            'password_hash' => $newHash,
+            'id' => $userId,
+        ]);
+
+        $pdo->commit();
+        clear_password_change_failed_attempts($pdo, $userId, $ip);
+        return true;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        error_log('Password change failed: ' . $e->getMessage());
+        return false;
+    }
 }
 
 
