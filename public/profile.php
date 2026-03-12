@@ -11,6 +11,12 @@ if (isset($_SESSION['flash_success']) && is_string($_SESSION['flash_success'])) 
     $flash_success_message = $_SESSION['flash_success'];
     unset($_SESSION['flash_success']);
 }
+
+$error_message = '';
+if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
+    $error_message = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

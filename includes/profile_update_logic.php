@@ -178,6 +178,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+
+    // PRG Pattern: If there are any errors, store them in the session and redirect
+    if (!empty($error_message)) {
+        $_SESSION['flash_error'] = $error_message;
+        header('Location: /profile.php');
+        exit;
+    }
 }
 
 // 4. PREPARE SAFE UI DATA

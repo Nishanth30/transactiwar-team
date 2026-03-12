@@ -14,6 +14,16 @@ require_once __DIR__ . '/../includes/sanitize.php';
 $error = '';
 $success = '';
 
+// Retrieve flash messages from the session if they exist
+if (isset($_SESSION['flash_error'])) {
+    $error = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
+if (isset($_SESSION['flash_success'])) {
+    $success = $_SESSION['flash_success'];
+    unset($_SESSION['flash_success']);
+}
+
 // Prevent already-authenticated users from creating extra accounts accidentally.
 if (isset($_SESSION['user_id'])) {
     header('Location: /index.php');
@@ -29,33 +39,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = (string) ($_POST['password'] ?? '');
     $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
+    $flash_error = '';
+    $flash_success = '';
+
     if ($username === '' || $email === '' || $password === '' || $confirmPassword === '') {
-        $error = 'All fields are required.';
+        $flash_error = 'All fields are required.';
     } elseif (!validate_username($username)) {
-        $error = 'Username must be 5-32 characters and contain only lowercase letters, numbers, dots, or underscores.';
+        $flash_error = 'Invalid username. Please check the requirements below.';
     } elseif (!validate_email($email)) {
-        $error = 'Invalid email address.';
+        $flash_error = 'Invalid email address.';
     } elseif (!validate_password($password)) {
-        $error = password_requirements();
+        $flash_error = password_requirements();
     } elseif ($password !== $confirmPassword) {
-        $error = 'Passwords do not match.';
+        $flash_error = 'Passwords do not match.';
     } else {
         try {
             // register_user() encapsulates DB uniqueness handling and password hashing.
             $result = register_user($pdo, $username, $email, $password);
 
             if ($result === true) {
-                $success = 'Registration successful. You can now login.';
+                $flash_success = 'Registration successful. You can now login.';
             } elseif ($result === 'duplicate') {
-                $error = 'Username or email already exists.';
+                $flash_error = 'Username or email already exists.';
             } else {
-                $error = 'Registration failed.';
+                $flash_error = 'Registration failed.';
             }
         } catch (Throwable $e) {
             error_log($e->getMessage());
-            $error = 'Registration failed.';
+            $flash_error = 'Registration failed.';
         }
     }
+
+    if ($flash_error !== '') {
+        $_SESSION['flash_error'] = $flash_error;
+    }
+    if ($flash_success !== '') {
+        $_SESSION['flash_success'] = $flash_success;
+    }
+
+    // PRG Pattern: Redirect back to GET request to prevent form resubmission on reload
+    header('Location: /register.php');
+    exit;
 }
 ?>
 <!DOCTYPE html>
@@ -103,10 +127,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="password" name="confirm_password" required>
                 </div>
 
-                <small class="text-muted mt-2 d-flex"><?= escape_output(password_requirements()) ?></small>
-
                 <button type="submit" class="btn-primary mt-4">Create Account</button>
             </form>
+
+            <?php if ($error !== ''): ?>
+            <div class="rules-box mt-4">
+                <h4 class="rules-title">Account Requirements</h4>
+                <div class="rules-section">
+                    <strong>Username</strong>
+                    <ul>
+                        <li><?= MIN_USERNAME_LEN ?>–<?= MAX_USERNAME_LEN ?> characters</li>
+                        <li>Only letters, numbers, underscores, and hyphens</li>
+                        <li>Cannot start or end with underscore or hyphen</li>
+                        <li>No spaces allowed</li>
+                    </ul>
+                </div>
+                <div class="rules-section">
+                    <strong>Email</strong>
+                    <ul>
+                        <li>Must be a valid email address</li>
+                        <li>Maximum <?= MAX_EMAIL_LEN ?> characters</li>
+                    </ul>
+                </div>
+                <div class="rules-section">
+                    <strong>Password</strong>
+                    <ul>
+                        <li><?= MIN_PASSWORD_LEN ?>–<?= MAX_PASSWORD_LEN ?> characters</li>
+                        <li>At least one uppercase letter (A–Z)</li>
+                        <li>At least one lowercase letter (a–z)</li>
+                        <li>At least one digit (0–9)</li>
+                        <li>At least one special character (!@#$%^&* etc.)</li>
+                    </ul>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <div class="text-center mt-4">
                 <a href="/login.php" class="text-muted">Already have an account? <span class="text-cyan">Login</span></a>

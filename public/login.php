@@ -92,6 +92,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 <button type="submit" class="btn-primary mt-4">Login</button>
             </form>
 
+            <?php if ($error !== ''): ?>
+            <div class="rules-box mt-4">
+                <h4 class="rules-title">Login Help</h4>
+                <div class="rules-section">
+                    <strong>Identifier</strong>
+                    <ul>
+                        <li>Enter your username or email address</li>
+                    </ul>
+                </div>
+                <div class="rules-section">
+                    <strong>Password</strong>
+                    <ul>
+                        <li><?= MIN_PASSWORD_LEN ?>–<?= MAX_PASSWORD_LEN ?> characters</li>
+                        <li>Must include: uppercase, lowercase, digit, and special character</li>
+                    </ul>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <div class="text-center mt-4">
                 <a href="/register.php" class="text-muted">Need an account? <span class="text-cyan">Register here</span></a>
             </div>
