@@ -4,3 +4,4 @@
 docker/.env
 *.pdf
 transactiwar-vm_key.pem
+storage/logs/*.log

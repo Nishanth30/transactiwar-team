@@ -9,7 +9,7 @@
 //
 // Design principles:
 //   - NEVER crashes the main application
-//   - Silent failure with file fallback
+//   - Silent failure with DB-only logging
 //   - Zero dependencies except db.php + sanitize.php
 //   - Every attack leaves a trace
 
@@ -19,15 +19,6 @@ declare(strict_types=1);
 // ══════════════════════════════════════════════════════════════════
 //  CONSTANTS
 // ══════════════════════════════════════════════════════════════════
-
-// Log file fallback path (when DB is unavailable)
-define('LOG_FILE_PATH',     __DIR__ . '/../storage/logs/activity.log');
-
-// Max log file size before rotation (5MB)
-define('LOG_MAX_SIZE',      5 * 1024 * 1024);
-
-// Rotated log file path
-define('LOG_ROTATED_PATH',  __DIR__ . '/../storage/logs/activity_old.log');
 
 // Brute force threshold
 define('MAX_LOGIN_FAILS',   5);
@@ -131,25 +122,14 @@ function logActivity(string $event): void {
         _logToDatabase($userId, $username, $event, $ip);
 
     } catch (Throwable $e) {
-        // DB failed — try file fallback
-        try {
-            _logToFile(
-                $_SESSION['user_id']  ?? null,
-                $_SESSION['username'] ?? null,
-                $event,
-                _getLogIp()
-            );
-        } catch (Throwable $e2) {
-            // File also failed — last resort
-            error_log('Logger complete failure: ' . $e2->getMessage());
-        }
+        // Never throw into business flow. Keep diagnostics in server logs.
+        error_log('Activity log DB write failed: ' . $e->getMessage());
     }
 }
 
 /**
- * Log a high-priority security event.
+ * Log a high-priority security event in DB.
  * Includes extra detail field for attack specifics.
- * Always attempts both DB and file logging.
  *
  * Usage:
  *   logSecurityEvent(LOG_CSRF_FAIL, 'transfer.php POST');
@@ -164,26 +144,13 @@ function logSecurityEvent(string $event, string $detail = ''): void {
         ? $event . ':' . $detail
         : $event;
 
-    // Log to DB
+    // Security events are DB-backed like all other activity logs.
     logActivity($fullEvent);
-
-    // ALSO log to file — security events get double logged
-    // So even if someone deletes DB logs, file remains
-    try {
-        _logToFile(
-            $_SESSION['user_id']  ?? null,
-            $_SESSION['username'] ?? null,
-            $fullEvent,
-            _getLogIp()
-        );
-    } catch (Throwable $e) {
-        error_log('Security file log failed: ' . $e->getMessage());
-    }
 }
 
 
 // ══════════════════════════════════════════════════════════════════
-//  SECTION 2 — STORAGE BACKENDS
+//  SECTION 2 — DB STORAGE
 // ══════════════════════════════════════════════════════════════════
 
 /**
@@ -198,11 +165,8 @@ function _logToDatabase(
     string  $event,
     string  $ip
 ): void {
-    global $pdo;
-
-    if (!isset($pdo) || !($pdo instanceof PDO)) {
-        throw new RuntimeException('PDO not available');
-    }
+    $pdo = _getLoggerPdo();
+    $userId = ($userId !== null && $userId > 0) ? $userId : null;
 
     $stmt = $pdo->prepare(
         'INSERT INTO activity_logs
@@ -211,78 +175,51 @@ function _logToDatabase(
             (?, ?, ?, ?)'
     );
 
-    $stmt->execute([
-        $userId,    // NULL for guests
-        $username,  // NULL for guests
-        $event,     // event type
-        $ip,        // client IP
-    ]);
-}
+    try {
+        $stmt->execute([
+            $userId,    // NULL for guests
+            $username,  // NULL for guests
+            $event,     // event type
+            $ip,        // client IP
+        ]);
+    } catch (PDOException $e) {
+        $isForeignKeyError = $e->getCode() === '23000';
+        if (!$isForeignKeyError) {
+            throw $e;
+        }
 
-/**
- * Write log entry to flat file — fallback when DB unavailable.
- * Rotates file when it exceeds LOG_MAX_SIZE.
- *
- * Format:
- *   [2026-02-22 14:32:07] | EVENT | user_id | username | IP
- *
- * @throws RuntimeException if file write fails
- */
-function _logToFile(
-    ?int    $userId,
-    ?string $username,
-    string  $event,
-    string  $ip
-): void {
-    $logDir = dirname(LOG_FILE_PATH);
-    if (!is_dir($logDir) && !mkdir($logDir, 0750, true) && !is_dir($logDir)) {
-        throw new RuntimeException('Cannot create log directory: ' . $logDir);
-    }
-
-    // Rotate log if too large
-    if (file_exists(LOG_FILE_PATH) &&
-        filesize(LOG_FILE_PATH) > LOG_MAX_SIZE) {
-        _rotateLogFile();
-    }
-
-    $timestamp = date('Y-m-d H:i:s');
-    $uid       = $userId   ?? 'guest';
-    $uname     = $username ?? 'guest';
-
-    // Pipe-delimited format — easy to parse
-    $line = "[{$timestamp}] | {$event} | {$uid} | {$uname} | {$ip}\n";
-
-    // FILE_APPEND + LOCK_EX — safe concurrent writes
-    $result = file_put_contents(
-        LOG_FILE_PATH,
-        $line,
-        FILE_APPEND | LOCK_EX
-    );
-
-    if ($result === false) {
-        throw new RuntimeException(
-            'Cannot write to log file: ' . LOG_FILE_PATH
-        );
+        // Session can occasionally hold a stale/deleted user_id.
+        // Retry once with guest user semantics so the event still lands in DB.
+        $stmt->execute([
+            null,
+            $username,
+            $event,
+            $ip,
+        ]);
     }
 }
 
 /**
- * Rotate log file when it gets too large.
- * Renames current log to _old.log
+ * Resolve a PDO handle for logger writes.
+ * Prefers existing global PDO; lazily boots DB connection as a fallback.
  */
-function _rotateLogFile(): void {
-    $rotatedDir = dirname(LOG_ROTATED_PATH);
-    if (!is_dir($rotatedDir) && !mkdir($rotatedDir, 0750, true) && !is_dir($rotatedDir)) {
-        throw new RuntimeException('Cannot create rotated log directory: ' . $rotatedDir);
+function _getLoggerPdo(): PDO {
+    global $pdo;
+
+    if (isset($pdo) && $pdo instanceof PDO) {
+        return $pdo;
     }
 
-    if (file_exists(LOG_ROTATED_PATH) && !unlink(LOG_ROTATED_PATH)) {
-        throw new RuntimeException('Cannot remove old rotated log file.');
+    $dbBootstrap = __DIR__ . '/../config/db.php';
+    if (is_file($dbBootstrap)) {
+        require $dbBootstrap;
     }
 
-    if (file_exists(LOG_FILE_PATH) && !rename(LOG_FILE_PATH, LOG_ROTATED_PATH)) {
-        throw new RuntimeException('Cannot rotate log file.');
+    if (isset($pdo) && $pdo instanceof PDO) {
+        return $pdo;
     }
+
+    throw new RuntimeException('PDO not available');
 }
 
 
