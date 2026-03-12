@@ -2,6 +2,45 @@
 
 declare(strict_types=1);
 
+function get_trusted_proxy_ips(): array
+{
+    static $cached = null;
+
+    if ($cached !== null) {
+        return $cached;
+    }
+
+    $raw = trim((string) getenv('TRUSTED_PROXIES'));
+    if ($raw === '') {
+        $cached = [];
+        return $cached;
+    }
+
+    $trusted = [];
+    foreach (explode(',', $raw) as $candidate) {
+        $ip = trim($candidate);
+        if ($ip === '') {
+            continue;
+        }
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+            $trusted[] = $ip;
+        }
+    }
+
+    $cached = array_values(array_unique($trusted));
+    return $cached;
+}
+
+function is_request_from_trusted_proxy(): bool
+{
+    $remoteAddr = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+    if (!filter_var($remoteAddr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+        return false;
+    }
+
+    return in_array($remoteAddr, get_trusted_proxy_ips(), true);
+}
+
 function get_request_client_ip(): string
 {
     $remoteAddr = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
@@ -26,7 +65,8 @@ function is_secure_request(): bool
     // Reverse proxy / load balancer TLS termination (e.g. nginx, Docker ingress).
     // HTTP_X_FORWARDED_PROTO is only trusted when the request arrives from a
     // known proxy — REMOTE_ADDR spoofing is not possible at the TCP level.
-    if (strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https') {
+    $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    if ($forwardedProto === 'https' && is_request_from_trusted_proxy()) {
         return true;
     }
 

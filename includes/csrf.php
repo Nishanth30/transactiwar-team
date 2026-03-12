@@ -8,6 +8,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/request.php';
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 define('CSRF_TOKEN_BYTES',   32);              // 256-bit raw entropy
@@ -15,8 +17,7 @@ define('CSRF_SESSION_KEY',   'csrf_token');
 define('CSRF_FIELD_NAME',    'csrf_token');
 define('CSRF_HEADER_NAME',   'X-CSRF-Token'); // for AJAX requests
 define('CSRF_MAX_AGE',       3600);            // token expires after 1 hour (seconds)
-define('CSRF_ALLOWED_ORIGIN', '');             // Set to your origin e.g. 'https://example.com'
-                                               // Leave empty to skip origin check (not recommended for production)
+define('CSRF_ALLOWED_ORIGIN', trim((string) (getenv('CSRF_ALLOWED_ORIGIN') ?: ''))); // e.g. https://example.com
 
 
 // ─── Internal Helpers ────────────────────────────────────────────────────────
@@ -90,9 +91,13 @@ function _csrfAssertSession(): void {
 function _csrfCheckOrigin(): bool {
     $allowed = CSRF_ALLOWED_ORIGIN;
 
-    // Developer opted out — skip (with a warning already emitted by csrfEnsure)
+    // Fail-safe default: if env var is unset, enforce same-origin for this host.
     if ($allowed === '') {
-        return true;
+        $allowed = get_request_origin();
+    }
+
+    if ($allowed === '') {
+        return false;
     }
 
     // Prefer Origin header (set by browsers on cross-site requests).
@@ -112,7 +117,16 @@ function _csrfCheckOrigin(): bool {
     }
 
     if ($origin === '') {
-        // No origin information available — fail closed (conservative)
+        /*
+         * Some privacy settings/policies can strip Origin + Referer.
+         * In that case, rely on Fetch Metadata as a strict fallback.
+         */
+        $fetchSite = strtolower(trim((string) ($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '')));
+        if (in_array($fetchSite, ['same-origin', 'same-site', 'none'], true)) {
+            return true;
+        }
+
+        // No trustworthy origin signals available — fail closed.
         return false;
     }
 

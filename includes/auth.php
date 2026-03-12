@@ -24,6 +24,71 @@ const PASSWORD_CHANGE_BACKOFF_CAP_SECONDS = 16;
 const DUMMY_HASH =
     '$2y$12$KIXsvMrxRbLQn5oTMHuSPOY/hGKPSfLpFBG7GiKVcI5Fg2NeRRdYu';
 
+function ensure_session_version_support(PDO $pdo): void
+{
+    static $cached = null;
+
+    if ($cached !== null) {
+        if (!$cached) {
+            throw new RuntimeException('users.session_version column is required');
+        }
+        return;
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'session_version'");
+        $hasColumn = (bool) $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$hasColumn) {
+            // Auto-heal legacy DB volumes that predate session_version.
+            try {
+                $pdo->exec("
+                    ALTER TABLE users
+                    ADD COLUMN session_version INT UNSIGNED NOT NULL DEFAULT 1
+                    AFTER password_hash
+                ");
+            } catch (PDOException $e) {
+                // Ignore concurrent add attempts from another request.
+                $sqlState = (string) $e->getCode();
+                $driverCode = (string) ($e->errorInfo[1] ?? '');
+                $isDuplicateColumn = ($sqlState === '42S21' || $driverCode === '1060');
+                if (!$isDuplicateColumn) {
+                    throw $e;
+                }
+            }
+
+            $stmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'session_version'");
+            $hasColumn = (bool) $stmt->fetch(PDO::FETCH_ASSOC);
+        }
+
+        $cached = $hasColumn;
+    } catch (Throwable $e) {
+        $cached = false;
+        throw new RuntimeException(
+            'Failed to validate users.session_version support: ' . $e->getMessage(),
+            0,
+            $e
+        );
+    }
+
+    if (!$cached) {
+        throw new RuntimeException('users.session_version column is required');
+    }
+}
+
+function normalize_login_identifier(string $identifier): string
+{
+    return strtolower(trim($identifier));
+}
+
+function login_attempt_key(string $identifier, string $ip): string
+{
+    $identifierHash = substr(hash('sha256', normalize_login_identifier($identifier)), 0, 16);
+    $ipHash = substr(hash('sha256', $ip), 0, 16);
+
+    return 'li:' . $identifierHash . ':' . $ipHash;
+}
+
 
 /* |-------------------------------------------------------------------------- | Ensure session exists safely |-------------------------------------------------------------------------- */
 function ensure_session_started(): void
@@ -45,8 +110,8 @@ function ensure_session_started(): void
 }
 
 
-/* |-------------------------------------------------------------------------- | IP-based rate limiting (DB-backed) | Keyed by IP - clearing cookies does NOT reset this. |-------------------------------------------------------------------------- */
-function is_ip_locked(PDO $pdo, string $ip): bool
+/* |-------------------------------------------------------------------------- | Login attempt throttling (DB-backed) | Keyed by identifier+IP hash - clearing cookies does NOT reset this. |-------------------------------------------------------------------------- */
+function is_ip_locked(PDO $pdo, string $attemptKey): bool
 {
     $now = time();
     $stmt = $pdo->prepare("
@@ -54,7 +119,7 @@ function is_ip_locked(PDO $pdo, string $ip): bool
         FROM login_attempts
         WHERE ip = :ip
     ");
-    $stmt->execute(['ip' => $ip]);
+    $stmt->execute(['ip' => $attemptKey]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) {
@@ -69,7 +134,7 @@ function is_ip_locked(PDO $pdo, string $ip): bool
     return false;
 }
 
-function record_failed_attempt(PDO $pdo, string $ip): void
+function record_failed_attempt(PDO $pdo, string $attemptKey): void
 {
     $now = time();
 
@@ -91,7 +156,7 @@ function record_failed_attempt(PDO $pdo, string $ip): void
                            ),
             last_attempt = :now
     ")->execute([
-        'ip' => $ip,
+        'ip' => $attemptKey,
         'now' => $now,
         'window' => $now - ATTEMPT_WINDOW,
         'max' => MAX_LOGIN_ATTEMPTS,
@@ -114,14 +179,14 @@ function record_failed_attempt(PDO $pdo, string $ip): void
  *   4 fails → 16s
  *   5+ fails→ 30s (cap)
  */
-function get_backoff_delay(PDO $pdo, string $ip): int
+function get_backoff_delay(PDO $pdo, string $attemptKey): int
 {
     $stmt = $pdo->prepare("
         SELECT attempts, last_attempt
         FROM login_attempts
         WHERE ip = :ip
     ");
-    $stmt->execute(['ip' => $ip]);
+    $stmt->execute(['ip' => $attemptKey]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row || $row['attempts'] === 0) {
@@ -137,20 +202,20 @@ function get_backoff_delay(PDO $pdo, string $ip): int
     return $delay;
 }
 
-function clear_failed_attempts(PDO $pdo, string $ip): void
+function clear_failed_attempts(PDO $pdo, string $attemptKey): void
 {
     $pdo->prepare("
         DELETE FROM login_attempts WHERE ip = :ip
-    ")->execute(['ip' => $ip]);
+    ")->execute(['ip' => $attemptKey]);
 }
 
-function get_lockout_remaining(PDO $pdo, string $ip): int
+function get_lockout_remaining(PDO $pdo, string $attemptKey): int
 {
     $now = time();
     $stmt = $pdo->prepare("
         SELECT locked_until FROM login_attempts WHERE ip = :ip
     ");
-    $stmt->execute(['ip' => $ip]);
+    $stmt->execute(['ip' => $attemptKey]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row || $row['locked_until'] <= $now) {
@@ -295,6 +360,7 @@ function change_password_for_user(
     }
 
     try {
+        ensure_session_version_support($pdo);
         $pdo->beginTransaction();
 
         $stmt = $pdo->prepare("
@@ -329,10 +395,12 @@ function change_password_for_user(
         $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
         $updateStmt = $pdo->prepare("
             UPDATE users
-            SET password_hash = :password_hash
+            SET password_hash = :password_hash,
+                session_version = session_version + 1
             WHERE id = :id
             LIMIT 1
         ");
+
         $updateStmt->execute([
             'password_hash' => $newHash,
             'id' => $userId,
@@ -416,48 +484,36 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
 }
 
 
-/* |-------------------------------------------------------------------------- | Login user |-------------------------------------------------------------------------- | Returns: |   true     -> success |   'locked' -> IP is rate-limited |   false    -> invalid credentials | | Security: | - DB-backed IP rate limiting (cookie-clearing resistant) | - Anti-enumeration timing protection | - Randomized brute-force delay | - Session fixation prevention | - Session IP binding |-------------------------------------------------------------------------- */
+/* |-------------------------------------------------------------------------- | Login user |-------------------------------------------------------------------------- | Returns: |   true     -> success |   'locked' -> identifier/IP is rate-limited |   false    -> invalid credentials | | Security: | - DB-backed identifier+IP throttling (cookie-clearing resistant) | - Anti-enumeration timing protection | - Randomized brute-force delay | - Session fixation prevention | - Session IP binding |-------------------------------------------------------------------------- */
 function login_user(PDO $pdo, string $identifier, string $password): bool|string
 {
     ensure_session_started();
+    try {
+        ensure_session_version_support($pdo);
+    } catch (Throwable $e) {
+        error_log('Session version support missing during login: ' . $e->getMessage());
+        if (function_exists('logSecurityEvent')) {
+            logSecurityEvent(LOG_SUSPICIOUS, 'session_version_unavailable_login');
+        }
+        return 'system';
+    }
 
     $ip = function_exists('get_client_ip')
         ? get_client_ip()
         : sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
-
-    // Hard lock check — only triggers after MAX_LOGIN_ATTEMPTS (20) failures
-    if (is_ip_locked($pdo, $ip)) {
-        if (function_exists('logActivity')) {
-            logActivity(LOG_LOGIN_LOCKED);
-        }
-        usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
-        return 'locked';
-    }
-
-    // Exponential backoff — server-side enforced sleep based on prior failures.
-    // Applied BEFORE password_verify so even a correct guess is slowed down.
-    $backoffSeconds = get_backoff_delay($pdo, $ip);
-    if ($backoffSeconds > 0) {
-        sleep($backoffSeconds);
-    }
-
     $identifier = trim($identifier);
 
-    /*
-     * Split query to avoid username/email ambiguity -
-     * prevents edge cases where a username looks like an email.
-     */
     if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
         $sql = "
-            SELECT id, public_id, username, password_hash
+            SELECT id, public_id, username, password_hash, session_version
             FROM users
             WHERE email = :id
             LIMIT 1
         ";
-    }
-    else {
+        $identifier = normalize_email($identifier);
+    } else {
         $sql = "
-            SELECT id, public_id, username, password_hash
+            SELECT id, public_id, username, password_hash, session_version
             FROM users
             WHERE username = :id
             LIMIT 1
@@ -467,52 +523,56 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['id' => $identifier]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    $attemptKey = $user
+        ? login_attempt_key('uid:' . (string) $user['id'], $ip)
+        : login_attempt_key($identifier, $ip);
 
-    /*
-     * Always run password_verify() even when user not found.
-     * DUMMY_HASH is a real bcrypt hash so full computation always runs,
-     * preventing timing-based user enumeration.
-     */
+    // Hard lock check - only triggers after MAX_LOGIN_ATTEMPTS failures.
+    if (is_ip_locked($pdo, $attemptKey)) {
+        if (function_exists('logActivity')) {
+            logActivity(LOG_LOGIN_LOCKED);
+        }
+        usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
+        return 'locked';
+    }
+
+    // Exponential backoff - server-side enforced delay based on prior failures.
+    $backoffSeconds = get_backoff_delay($pdo, $attemptKey);
+    if ($backoffSeconds > 0) {
+        sleep($backoffSeconds);
+    }
+
+    // Always verify against a real hash to resist timing-based user enumeration.
     $hashToCheck = $user['password_hash'] ?? DUMMY_HASH;
     $valid = password_verify($password, $hashToCheck);
 
-    // Random delay - slows brute force and hides timing differences
     usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
 
     if (!$user || !$valid) {
-
-        record_failed_attempt($pdo, $ip);
-        // ADD THIS
+        record_failed_attempt($pdo, $attemptKey);
         if (function_exists('logActivity')) {
             logActivity(LOG_LOGIN_FAIL);
         }
-
         return false;
     }
 
-    // Successful login - clear rate limit record for this IP
-    clear_failed_attempts($pdo, $ip);
+    // Successful login clears only this identifier+IP throttle key.
+    clear_failed_attempts($pdo, $attemptKey);
 
-    /* Prevent session fixation */
     session_regenerate_id(true);
 
     $_SESSION['user_id'] = (int)$user['id'];
     $_SESSION['public_user_id'] = (string)$user['public_id'];
     $_SESSION['username'] = $user['username'];
+    $_SESSION['session_version'] = (int)($user['session_version'] ?? 1);
 
-    /*
-     * Bind session to client IP.
-     * Invalidates stolen cookies used from a different IP.
-     */
+    // Bind session to client IP to reduce stolen-cookie reuse.
     $_SESSION['ip'] = $ip;
-    // ADD THIS - on success (Change 5)
     if (function_exists('logActivity')) {
         logActivity(LOG_LOGIN_SUCCESS);
     }
     return true;
 }
-
-
 /* |-------------------------------------------------------------------------- | Require login |-------------------------------------------------------------------------- */
 function require_login(): void
 {
@@ -543,6 +603,64 @@ function require_login(): void
         session_unset();
         session_destroy();
 
+        header('Location: /login.php');
+        exit;
+    }
+
+    try {
+        $pdo = null;
+        if (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
+            $pdo = $GLOBALS['pdo'];
+        } else {
+            require __DIR__ . '/../config/db.php';
+            if (isset($pdo) && $pdo instanceof PDO) {
+                $GLOBALS['pdo'] = $pdo;
+            } elseif (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
+                $pdo = $GLOBALS['pdo'];
+            }
+        }
+
+        if (!($pdo instanceof PDO)) {
+            throw new RuntimeException('PDO not available in require_login');
+        }
+
+        ensure_session_version_support($pdo);
+
+        if (!isset($_SESSION['session_version'])) {
+            if (function_exists('logSecurityEvent')) {
+                logSecurityEvent(LOG_SESSION_HIJACK, 'Missing session version');
+            }
+            session_unset();
+            session_destroy();
+            header('Location: /login.php');
+            exit;
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT session_version
+            FROM users
+            WHERE id = :id
+            LIMIT 1
+        ");
+        $stmt->execute(['id' => (int)$_SESSION['user_id']]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $dbSessionVersion = (int)($row['session_version'] ?? 0);
+        $sessionVersion = (int)$_SESSION['session_version'];
+
+        if (!$row || $dbSessionVersion !== $sessionVersion) {
+            if (function_exists('logSecurityEvent')) {
+                logSecurityEvent(LOG_SESSION_HIJACK, 'Session version mismatch');
+            }
+            session_unset();
+            session_destroy();
+            header('Location: /login.php');
+            exit;
+        }
+    } catch (Throwable $e) {
+        error_log('require_login session version check failed: ' . $e->getMessage());
+        session_unset();
+        session_destroy();
         header('Location: /login.php');
         exit;
     }

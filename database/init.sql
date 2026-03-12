@@ -5,6 +5,7 @@ CREATE TABLE users (
     username VARCHAR(32) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
     email VARCHAR(254) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    session_version INT UNSIGNED NOT NULL DEFAULT 1,
     balance_paise BIGINT UNSIGNED NOT NULL DEFAULT 10000, -- ₹100.00
     bio TEXT NULL,                                         -- long bio
     profile_image_path VARCHAR(512) NULL,                  -- image path/key/url

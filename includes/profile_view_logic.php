@@ -15,12 +15,24 @@ require_login();
 
 // If require_login() passes, we are mathematically guaranteed to have this:
 $viewer_internal_id = $_SESSION['user_id'];
+$sampleUsernames = [
+    'nishanth',
+    'tejas',
+    'divyansh',
+    'harshavardhan',
+    'vrishin',
+    'trudy',
+];
 
 
 // 3. RESOLUTION WATERFALL (Using Dog's Sanitizers)
 $target_uuid = sanitize_public_user_id($_GET['id'] ?? null);
 
 $target_username = clean_input($_GET['username'] ?? '');
+if ($target_username !== '' && !validate_username($target_username)) {
+    logSecurityEvent(LOG_INVALID_INPUT, 'Invalid profile username parameter');
+    $target_username = '';
+}
 
 $sql = "";
 $bind_val = "";
@@ -70,6 +82,17 @@ if (!$user) {
     http_response_code(404);
     die("Agent not found or does not exist.");
 }
+
+$targetUserId = (int) ($user['id'] ?? 0);
+$targetUsername = strtolower((string) ($user['username'] ?? ''));
+$isOwnProfile = ($viewer_internal_id === $targetUserId);
+$isSampleProfile = in_array($targetUsername, $sampleUsernames, true);
+
+if (!$isOwnProfile && !$isSampleProfile) {
+    logSecurityEvent(LOG_ACCESS_DENIED, "Non-sample profile access blocked: " . $targetUsername);
+    http_response_code(404);
+    die("Agent not found or does not exist.");
+}
 // 5. IRONCLAD DATA PACKAGING
 // We prep the data so the UI dev literally cannot cause an XSS attack.
 $profileData = [
@@ -77,7 +100,7 @@ $profileData = [
     'bio' => escape_output($user['bio'] ?? 'No operational biography provided.'),
     'image' => escape_output(basename((string)($user['profile_image_path'] ?? 'default_agent.png'))),
     'uuid' => escape_output($user['public_id']),
-    'is_mine' => ($viewer_internal_id === (int)$user['id'])
+    'is_mine' => $isOwnProfile
 
 ];
 

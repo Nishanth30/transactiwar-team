@@ -74,6 +74,8 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-app_database}
       APP_DIAGNOSTIC_MODE: ${APP_DIAGNOSTIC_MODE:-0}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in docker/.env}
+      CSRF_ALLOWED_ORIGIN: ${CSRF_ALLOWED_ORIGIN:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     volumes:
       - ../:/var/www/html:ro
       - ./.env.example:/var/www/html/docker/.env:ro

@@ -20,6 +20,11 @@ if (isset($_SESSION['flash_success']) && is_string($_SESSION['flash_success'])) 
     unset($_SESSION['flash_success']);
 }
 
+if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
+    $error = $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
+
 // Logged-in users should not reuse the login form.
 if (isset($_SESSION['user_id'])) {
     header('Location: /index.php');
@@ -32,12 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $usernameOrEmail = post_str('identifier');
     $password = (string) ($_POST['password'] ?? '');
+    $flashError = '';
 
     if ($usernameOrEmail === '' || $password === '') {
-        $error = 'All fields are required.';
+        $flashError = 'All fields are required.';
         logActivity(LOG_INVALID_INPUT);
     } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
-        $error = 'Invalid credentials.';
+        $flashError = 'Invalid credentials.';
         logActivity(LOG_INVALID_INPUT);
     } else {
         try {
@@ -50,15 +56,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $error = $success === 'locked'
-                ? 'Account temporarily locked. Please try again later.'
-                : 'Invalid credentials.';
+            if ($success === 'locked') {
+                $flashError = 'Account temporarily locked. Please try again later.';
+            } elseif ($success === 'system') {
+                $flashError = 'Login is temporarily unavailable. Please try again in a minute.';
+            } else {
+                $flashError = 'Invalid credentials.';
+            }
         } catch (Throwable $e) {
             error_log($e->getMessage());
-            $error = 'Login failed.';
+            $flashError = 'Login failed.';
             logActivity(LOG_INVALID_INPUT);
         }
     }
+
+    $_SESSION['flash_error'] = $flashError;
+    header('Location: /login.php');
+    exit;
 }
 
 // Keep page-view analytics on GET only.

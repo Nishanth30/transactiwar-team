@@ -1,0 +1,6 @@
+[2026-03-12 17:57:30] | SUSPICIOUS_ACTIVITY:session_version_unavailable_login | guest | guest | 172.18.0.1
+[2026-03-12 17:57:42] | SUSPICIOUS_ACTIVITY:session_version_unavailable_login | guest | guest | 172.18.0.1
+[2026-03-12 17:58:08] | SUSPICIOUS_ACTIVITY:session_version_unavailable_login | guest | guest | 172.18.0.1
+[2026-03-12 18:03:29] | SUSPICIOUS_ACTIVITY:session_version_unavailable_login | guest | guest | 172.18.0.1
+[2026-03-12 18:07:25] | TRANSFER_FAIL:insufficient_balance | 5 | vrishin | 172.18.0.1
+[2026-03-12 18:19:40] | LOGOUT | 21 | sesscheck1773339577 | 172.18.0.1

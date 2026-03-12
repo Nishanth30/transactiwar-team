@@ -718,14 +718,21 @@ th {
 .search-form {
     flex-direction: row;
     align-items: flex-end;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
 }
 
 .search-input-wrapper {
     flex: 1;
+    margin: 10px 0;
 }
 
 .btn-search {
-    margin-top: 0;
+    margin: 10px 0;
+}
+
+.search-form + .results-container {
+    margin-top: 0 !important;
 }
 
 .search-result-link {
@@ -737,6 +744,22 @@ th {
     padding: 1.5rem;
     text-align: center;
     transition: all 0.3s ease;
+}
+
+.sample-users-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.sample-users-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.sample-users-column .search-result-link {
+    width: 100%;
 }
 
 .search-result-title {
@@ -776,6 +799,7 @@ th {
 
 .profile-bio-box {
     max-width: 100%;
+    margin: 1rem 0 1.5rem 0;
 }
 
 .account-security-panel {
@@ -795,5 +819,9 @@ th {
 
     .profile-right-column {
         align-items: flex-start;
+    }
+
+    .sample-users-grid {
+        grid-template-columns: 1fr;
     }
 }

@@ -21,13 +21,13 @@ declare(strict_types=1);
 // ══════════════════════════════════════════════════════════════════
 
 // Log file fallback path (when DB is unavailable)
-define('LOG_FILE_PATH',     __DIR__ . '/../logs/activity.log');
+define('LOG_FILE_PATH',     __DIR__ . '/../storage/logs/activity.log');
 
 // Max log file size before rotation (5MB)
 define('LOG_MAX_SIZE',      5 * 1024 * 1024);
 
 // Rotated log file path
-define('LOG_ROTATED_PATH',  __DIR__ . '/../logs/activity_old.log');
+define('LOG_ROTATED_PATH',  __DIR__ . '/../storage/logs/activity_old.log');
 
 // Brute force threshold
 define('MAX_LOGIN_FAILS',   5);
@@ -234,6 +234,11 @@ function _logToFile(
     string  $event,
     string  $ip
 ): void {
+    $logDir = dirname(LOG_FILE_PATH);
+    if (!is_dir($logDir) && !mkdir($logDir, 0750, true) && !is_dir($logDir)) {
+        throw new RuntimeException('Cannot create log directory: ' . $logDir);
+    }
+
     // Rotate log if too large
     if (file_exists(LOG_FILE_PATH) &&
         filesize(LOG_FILE_PATH) > LOG_MAX_SIZE) {
@@ -266,11 +271,18 @@ function _logToFile(
  * Renames current log to _old.log
  */
 function _rotateLogFile(): void {
-    if (file_exists(LOG_ROTATED_PATH)) {
-        unlink(LOG_ROTATED_PATH);
+    $rotatedDir = dirname(LOG_ROTATED_PATH);
+    if (!is_dir($rotatedDir) && !mkdir($rotatedDir, 0750, true) && !is_dir($rotatedDir)) {
+        throw new RuntimeException('Cannot create rotated log directory: ' . $rotatedDir);
     }
 
-    rename(LOG_FILE_PATH, LOG_ROTATED_PATH);
+    if (file_exists(LOG_ROTATED_PATH) && !unlink(LOG_ROTATED_PATH)) {
+        throw new RuntimeException('Cannot remove old rotated log file.');
+    }
+
+    if (file_exists(LOG_FILE_PATH) && !rename(LOG_FILE_PATH, LOG_ROTATED_PATH)) {
+        throw new RuntimeException('Cannot rotate log file.');
+    }
 }
 
 

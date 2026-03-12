@@ -39,8 +39,10 @@ Required values in `docker/.env`:
 - `MYSQL_USER`
 - `MYSQL_PASSWORD`
 - `APP_PORT`
+- `CSRF_ALLOWED_ORIGIN`
 - `APP_DIAGNOSTIC_MODE`
 - `SESSION_SECRET`
+- `TRUSTED_PROXIES` (optional, comma-separated proxy IPs allowed to set `X-Forwarded-Proto`)
 
 Generate a session secret (minimum 32 random characters):
 
@@ -52,6 +54,21 @@ Recommended local default:
 
 ```dotenv
 APP_PORT=8080
+CSRF_ALLOWED_ORIGIN=http://localhost:8080
+TRUSTED_PROXIES=
+```
+
+If you run using `127.0.0.1`, set:
+
+```dotenv
+CSRF_ALLOWED_ORIGIN=http://127.0.0.1:8080
+```
+
+Use your real HTTPS origin in production (for example `https://app.example.com`).
+If TLS is terminated at a reverse proxy, set `TRUSTED_PROXIES` to the proxy IP(s), for example:
+
+```dotenv
+TRUSTED_PROXIES=172.20.0.10,172.20.0.11
 ```
 
 ## Start the Project

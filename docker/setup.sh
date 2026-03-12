@@ -113,6 +113,22 @@ DEALLOCATE PREPARE stmt_add_idx;
 ALTER TABLE users
   MODIFY public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT (UUID());
 
+SET @has_session_version_col := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'users'
+    AND column_name = 'session_version'
+);
+SET @add_session_version_col_sql := IF(
+  @has_session_version_col = 0,
+  'ALTER TABLE users ADD COLUMN session_version INT UNSIGNED NOT NULL DEFAULT 1 AFTER password_hash',
+  'DO 0'
+);
+PREPARE stmt_add_session_version FROM @add_session_version_col_sql;
+EXECUTE stmt_add_session_version;
+DEALLOCATE PREPARE stmt_add_session_version;
+
 SET @has_login_attempts := (
   SELECT COUNT(*)
   FROM information_schema.tables

@@ -76,7 +76,7 @@ function send_security_headers(): void
     header('Content-Security-Policy: ' . build_csp(get_csp_nonce()));
     header('X-Frame-Options: DENY');
     header('X-Content-Type-Options: nosniff');
-    header('Referrer-Policy: no-referrer');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
     header(
         'Permissions-Policy: ' .
         'accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), ' .
@@ -114,7 +114,7 @@ function send_asset_headers(string $contentType = 'application/octet-stream'): v
     header('Content-Security-Policy: ' . build_asset_csp());
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: DENY');
-    header('Referrer-Policy: no-referrer');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Cache-Control: public, max-age=' . HSTS_MAX_AGE . ', immutable');
     header('Content-Type: ' . $contentType);
 
@@ -139,7 +139,7 @@ function send_json_headers(): void
     header('Content-Type: application/json; charset=UTF-8');
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: DENY');
-    header('Referrer-Policy: no-referrer');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Access-Control-Allow-Origin: ' . get_own_origin());
     header('Access-Control-Allow-Methods: POST, GET');
     header('Access-Control-Allow-Headers: X-CSRF-Token, Content-Type');
@@ -199,7 +199,7 @@ function send_error_headers(int $statusCode): void
     header('Content-Type: text/html; charset=UTF-8');
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: DENY');
-    header('Referrer-Policy: no-referrer');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
 }
 
 function debug_headers(): void
