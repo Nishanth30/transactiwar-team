@@ -77,7 +77,6 @@ services:
     volumes:
       - ../:/var/www/html:ro
       - ./.env.example:/var/www/html/docker/.env:ro
-      - ../public/uploads:/var/www/html/public/uploads
       - ../storage:/var/www/html/storage
     networks:
       - backend
