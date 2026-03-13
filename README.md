@@ -347,3 +347,11 @@ AI assistants were also used as implementation aides during development and revi
 - [ChatGPT](https://chat.openai.com/)
 - [Claude](https://claude.ai/)
 - [Gemini](https://gemini.google.com/)
+
+## Team 17 Members
+
+- `CS25MTECH11011` - Harshavardhan Raj Meerjumla
+- `CS25MTECH14018` - Divyansh Sevta
+- `CS25MTECH14014` - Dapse Tejas Rajendra
+- `CS25MTECH14020` - Nishanth D
+- `CS25MTECH14015` - Vrishin Gattu
