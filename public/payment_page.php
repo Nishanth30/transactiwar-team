@@ -78,16 +78,18 @@ logActivity(LOG_PAGE_VIEW);
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container auth-container">
-        <div class="card">
-            <h2 class="text-glow text-center">Transfer Funds</h2>
+    <div class="container">
+        <div class="card" style="padding: 1.5rem 2rem;">
+            <h2 class="text-glow text-center" style="margin-bottom: 0.5rem;">Transfer Funds</h2>
 
-            <div class="card payment-target-card">
+            <div class="card payment-target-card" style="margin-bottom: 1rem; padding: 1rem;">
                 <p class="text-muted payment-target-label">Target Agent</p>
                 <h3 class="text-cyan payment-target-name"><?= escape_output($receiverUsername) ?></h3>
-                <div class="payment-balance-row">
-                    <span class="text-muted payment-balance-label">Your secure balance:</span>
-                    <strong class="text-success font-mono tx-table-amt">₹<?= escape_output($balanceRupees) ?></strong>
+                <div class="profile-funds-box mt-2 w-100 text-center" style="padding: 0.75rem;">
+                    <p class="profile-funds-label mb-1">Your balance</p>
+                    <strong class="font-monospace profile-balance-large profile-balance-emphasis">
+                        ₹<?= escape_output($balanceRupees) ?>
+                    </strong>
                 </div>
             </div>
 
@@ -96,18 +98,18 @@ logActivity(LOG_PAGE_VIEW);
                 <input type="hidden" name="transfer_nonce" value="<?= escape_attr($transferNonce) ?>">
                 <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
 
-                <div class="mt-2">
-                    <label>Transfer Amount (₹)</label>
+                <div>
+                    <label style="margin-bottom: 2px;">Transfer Amount (₹)</label>
                     <input type="number" name="amount" min="1" step="0.01" placeholder="0.00" required>
                     <small class="text-muted payment-amount-hint">Minimum transfer: ₹1.00</small>
                 </div>
 
-                <div class="mt-3">
-                    <label>Operational Remark (Optional)</label>
+                <div>
+                    <label style="margin-bottom: 2px;">Operational Remark (Optional)</label>
                     <input type="text" name="remark" maxlength="500" placeholder="Enter secure note...">
                 </div>
 
-                <button type="submit" class="btn-primary mt-4 btn-block">Authorize Transfer</button>
+                <button type="submit" class="btn-primary mt-1 btn-block">Authorize Transfer</button>
             </form>
         </div>
     </div>
