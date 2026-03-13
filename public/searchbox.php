@@ -18,16 +18,18 @@ unset($_SESSION['transfer_complete']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <?php render_page_head('Transactiwar | Search Users'); ?>
 </head>
+
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
     <div class="container">
         <div class="card">
             <h2 class="text-glow">Search Users</h2>
-            <p class="text-muted mt-2">Only sample users are shown on this page.</p>
+
 
             <form method="GET" action="/searchbox.php" class="search-form">
                 <div class="search-input-wrapper">
@@ -35,7 +37,7 @@ unset($_SESSION['transfer_complete']);
                 </div>
                 <button type="submit" class="btn-primary btn-search">Search</button>
             </form>
-
+            <p class="text-muted mt-2">Sample Users : nishanth, tejas, divyansh, harshavardhan, vrishin, trudy</p>
             <div class="results-container mt-4">
                 <?php
                 $sampleUsernames = [
@@ -159,4 +161,5 @@ unset($_SESSION['transfer_complete']);
 
     <?php include __DIR__ . '/footer.html'; ?>
 </body>
+
 </html>
