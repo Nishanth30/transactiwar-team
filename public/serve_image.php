@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../includes/sanitize.php';
 
 // Only authenticated users can view profile images.
@@ -68,12 +69,10 @@ if (!array_key_exists($mimeType, $allowedMimes)) {
     exit('Forbidden file type.');
 }
 
-header('Content-Type: ' . $mimeType);
-header('X-Content-Type-Options: nosniff');
+send_asset_headers($mimeType);
 header('Content-Disposition: inline; filename="' . $filename . '"');
 header('Cache-Control: private, max-age=3600');
 header('Content-Length: ' . filesize($realFile));
-header('X-Frame-Options: DENY');
 
 readfile($realFile);
 exit;

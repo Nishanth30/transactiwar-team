@@ -66,7 +66,7 @@ services:
       setup:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:${APP_PORT:-8080}:80"
+      - "127.0.0.1:${APP_PORT:-8443}:443"
     environment:
       MYSQL_HOST: db
       MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in docker/.env}
@@ -76,10 +76,18 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in docker/.env}
       CSRF_ALLOWED_ORIGIN: ${CSRF_ALLOWED_ORIGIN:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      ENFORCE_HTTPS: ${ENFORCE_HTTPS:-1}
+      GENERATE_SELF_SIGNED_TLS: ${GENERATE_SELF_SIGNED_TLS:-1}
+      TLS_CERT_FILE: /etc/apache2/ssl/server.crt
+      TLS_KEY_FILE: /etc/apache2/ssl/server.key
+      TLS_CERT_CN: ${TLS_CERT_CN:-localhost}
+      TLS_CERT_SAN: "${TLS_CERT_SAN:-DNS:localhost,IP:127.0.0.1,IP:::1}"
+      TLS_SELF_SIGNED_DAYS: ${TLS_SELF_SIGNED_DAYS:-30}
     volumes:
       - ../:/var/www/html:ro
       - ./.env.example:/var/www/html/docker/.env:ro
       - ../storage:/var/www/html/storage
+      - ./certs:/etc/apache2/ssl
     networks:
       - backend
       - frontend

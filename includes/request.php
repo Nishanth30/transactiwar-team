@@ -90,3 +90,64 @@ function get_request_origin(): string
 {
     return get_request_scheme() . '://' . get_request_host();
 }
+
+function should_enforce_https(): bool
+{
+    $raw = strtolower(trim((string) (getenv('ENFORCE_HTTPS') ?: '1')));
+
+    return !in_array($raw, ['', '0', 'false', 'no', 'off'], true);
+}
+
+function get_https_port(): ?int
+{
+    $raw = trim((string) (getenv('APP_PORT') ?: ''));
+    if ($raw === '' || !ctype_digit($raw)) {
+        return null;
+    }
+
+    $port = (int) $raw;
+    if ($port < 1 || $port > 65535) {
+        return null;
+    }
+
+    return $port;
+}
+
+function get_request_hostname(): string
+{
+    $host = get_request_host();
+    $parsed = parse_url('http://' . $host);
+    $hostname = (string) ($parsed['host'] ?? '');
+
+    return $hostname !== '' ? $hostname : 'localhost';
+}
+
+function get_https_redirect_host(): string
+{
+    $hostname = get_request_hostname();
+    $port = get_https_port();
+
+    if ($port === null || $port === 443) {
+        return $hostname;
+    }
+
+    if (filter_var($hostname, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $hostname = '[' . trim($hostname, '[]') . ']';
+    }
+
+    return $hostname . ':' . $port;
+}
+
+function enforce_https(): void
+{
+    if (!should_enforce_https() || is_secure_request()) {
+        return;
+    }
+
+    $url = 'https://' . get_https_redirect_host() . ($_SERVER['REQUEST_URI'] ?? '/');
+    $url = preg_replace('/[\r\n]/', '', $url ?? '');
+
+    header('HTTP/1.1 301 Moved Permanently');
+    header('Location: ' . $url);
+    exit;
+}

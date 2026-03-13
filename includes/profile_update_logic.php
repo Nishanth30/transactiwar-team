@@ -22,6 +22,23 @@ $old_image_path = $current_user['profile_image_path'] ?? null;
 $update_success = false;
 $error_message = '';
 
+function ensure_profile_upload_dir(): ?string
+{
+    $upload_dir = __DIR__ . '/../storage/uploads/';
+
+    if (!is_dir($upload_dir) && !mkdir($upload_dir, 0770, true) && !is_dir($upload_dir)) {
+        error_log('profile_update_logic.php: failed to create upload directory: ' . $upload_dir);
+        return null;
+    }
+
+    if (!is_writable($upload_dir)) {
+        error_log('profile_update_logic.php: upload directory is not writable: ' . $upload_dir);
+        return null;
+    }
+
+    return $upload_dir;
+}
+
 // 3. THE POST REQUEST HANDLER (When they click "Save")
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -50,7 +67,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($error_message) && isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
         $file = $_FILES['profile_image'];
 
-        if ($file['size'] > 2097152) {
+        if (!is_uploaded_file((string) ($file['tmp_name'] ?? ''))) {
+            $error_message = "Invalid upload source.";
+            logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "tmp_name was not an uploaded file");
+        }
+        elseif ($file['size'] > 2097152) {
             $error_message = "File is too large. Maximum size is 2MB.";
             logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "File exceeded 2MB limit");
         }
@@ -75,13 +96,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $safe_filename = sanitize_filename($file['name']);
                     $final_filename = 'avatar_' . bin2hex(random_bytes(16)) . '_' . $safe_filename;
                     // Store OUTSIDE the web root — serve via serve_image.php only
-                    $upload_dir = __DIR__ . '/../storage/uploads/';
-                    if (!is_dir($upload_dir)) {
-                        mkdir($upload_dir, 0755, true);
+                    $upload_dir = ensure_profile_upload_dir();
+                    if ($upload_dir === null) {
+                        $error_message = "System error: Upload storage is unavailable.";
+                        logSecurityEvent(LOG_FILE_UPLOAD_FAIL, "upload directory unavailable or not writable");
                     }
-                    $new_file_destination = $upload_dir . $final_filename;
+                    else {
+                        $new_file_destination = $upload_dir . $final_filename;
+                    }
 
-                    if (move_uploaded_file($file['tmp_name'], $new_file_destination)) {
+                    if (empty($error_message) && $new_file_destination !== null && move_uploaded_file($file['tmp_name'], $new_file_destination)) {
                         // Safe to re-process now that we know dimensions are small
                         $reprocess_success = false;
                         if ($mime_type === 'image/jpeg') {
@@ -122,12 +146,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $error_message = "System error: Failed to process secure image.";
                         }
                     }
-                    else {
+                    elseif (empty($error_message)) {
+                        error_log('profile_update_logic.php: move_uploaded_file failed for destination ' . (string) $new_file_destination);
                         $error_message = "System error: Failed to save the image.";
                     }
                 }
             }
         }
+    } elseif (empty($error_message) && isset($_FILES['profile_image']) && (int) ($_FILES['profile_image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+        $error_message = "Image upload failed before processing.";
+        logSecurityEvent(
+            LOG_FILE_UPLOAD_FAIL,
+            'php upload error code: ' . (string) ((int) ($_FILES['profile_image']['error'] ?? -1))
+        );
     }
 
     // D. DATABASE UPDATE & STRICT STORAGE CLEANUP

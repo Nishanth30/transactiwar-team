@@ -2,6 +2,9 @@
 .claude
 .pem
 docker/.env
+docker/certs/*.crt
+docker/certs/*.key
+docker/certs/*.csr
 *.pdf
 transactiwar-vm_key.pem
 storage/logs/*.log

@@ -11,6 +11,8 @@ ini_set('session.cookie_samesite', 'Strict');
 ini_set('session.sid_length', '48');
 ini_set('session.sid_bits_per_character', '6');
 
+enforce_https();
+
 $secure = is_secure_request();
 
 session_set_cookie_params([

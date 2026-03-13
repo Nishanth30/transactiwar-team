@@ -64,6 +64,8 @@ function remove_disclosure_headers(): void
 
 function send_security_headers(): void
 {
+    enforce_https();
+
     if (headers_sent($file, $line)) {
         error_log(
             "header.php: headers already sent in {$file} on line {$line}."
@@ -105,6 +107,8 @@ function send_security_headers(): void
 
 function send_asset_headers(string $contentType = 'application/octet-stream'): void
 {
+    enforce_https();
+
     if (headers_sent()) {
         return;
     }
@@ -127,6 +131,8 @@ function send_asset_headers(string $contentType = 'application/octet-stream'): v
 
 function send_json_headers(): void
 {
+    enforce_https();
+
     if (headers_sent()) {
         return;
     }
@@ -170,25 +176,10 @@ function cache_for(int $seconds): void
     header('Expires: ' . gmdate('D, d M Y H:i:s', time() + $seconds) . ' GMT');
 }
 
-function enforce_https(): void
-{
-    $host = get_request_host();
-    if (str_contains($host, 'localhost') || str_contains($host, '127.0.0.1') || str_contains($host, '::1')) {
-        return;
-    }
-
-    if (!is_secure_request()) {
-        $url = 'https://' . $host . ($_SERVER['REQUEST_URI'] ?? '/');
-        $url = preg_replace('/[\r\n]/', '', $url ?? '');
-
-        header('HTTP/1.1 301 Moved Permanently');
-        header('Location: ' . $url);
-        exit;
-    }
-}
-
 function send_error_headers(int $statusCode): void
 {
+    enforce_https();
+
     if (headers_sent()) {
         return;
     }
