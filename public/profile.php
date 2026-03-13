@@ -28,9 +28,9 @@ if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container auth-container container-profile">
-        <div class="card p-4 shadow-lg">
-            <h2 class="text-glow mb-4">Update Operational Profile</h2>
+    <div class="container mt-5">
+        <div class="card p-3 shadow-lg">
+            <h2 class="text-glow mb-2">Update Operational Profile</h2>
 
             <?php if ($flash_success_message !== ''): ?>
                 <div class="alert alert-success">
@@ -45,7 +45,7 @@ if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
                 </div>
             <?php endif; ?>
 
-            <div class="mb-4">
+            <div class="mb-2">
                 <p class="text-muted font-monospace mb-2">Current Operational Avatar</p>
                 <div class="avatar-wrapper d-inline-block">
                     <img src="/serve_image.php?file=<?= $display_image ?>" width="120" height="120"
@@ -56,20 +56,20 @@ if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
             <form action="/profile.php" method="POST" enctype="multipart/form-data">
                 <?= csrfField() ?>
 
-                <div class="mb-4">
+                <div class="mb-2">
                     <label class="form-label text-cyan fw-bold">Update Credentials Image</label>
                     <input type="file" name="profile_image" class="form-control bg-dark text-light border-info"
                         accept=".jpg,.jpeg,.png,.gif,.webp">
                     <div class="form-text text-muted">Accepted formats: JPG, PNG, WEBP (Max 2MB)</div>
                 </div>
 
-                <div class="mb-4">
+                <div class="mb-2">
                     <label class="form-label text-cyan fw-bold">Operational Bio</label>
-                    <textarea name="bio" class="form-control bg-dark text-light border-info" rows="4"
+                    <textarea name="bio" class="form-control bg-dark text-light border-info" rows="1"
                         placeholder="Enter your background and mission details..."><?= $display_bio ?></textarea>
                 </div>
 
-                <div class="d-flex gap-3 mt-4">
+                <div class="d-flex gap-3 mt-1">
                     <button type="submit" class="btn btn-primary w-50">Deploy Changes</button>
                     <a href="/view_profile.php" class="btn btn-outline-secondary w-50">Abort</a>
                 </div>

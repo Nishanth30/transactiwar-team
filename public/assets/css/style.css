@@ -132,20 +132,17 @@ h2 {
 /* Auth containers should not constrict larger tables or contents */
 .auth-container {
     max-width: 1000px;
-    /* Matched to Transaction History width */
     margin: 4rem auto;
     width: 100%;
 }
 
-
-/* Navigation */
 header,
 .app-nav {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 2rem;
-    height: 60px;
+    height: 50px;
     background: rgba(255, 255, 255, 0.04);
     backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--glass-border);
@@ -262,6 +259,29 @@ textarea:focus {
     box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.1);
 }
 
+/* File Input Customization */
+input[type="file"]::file-selector-button {
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.8), rgba(16, 185, 129, 0.8));
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(52, 211, 153, 0.25);
+    transition: all 0.2s;
+    margin-right: 12px;
+}
+
+input[type="file"]::file-selector-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(52, 211, 153, 0.4);
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.9), rgba(5, 150, 105, 0.9));
+}
+
 /* Buttons */
 .btn-primary,
 button[type="submit"],
@@ -283,7 +303,7 @@ button[type="submit"],
     display: inline-block;
     /* Ensure `a` tags respect padding */
     text-align: center;
-    margin: 10px 0px;
+    margin: 5px 0px;
 }
 
 .btn-primary:hover,
@@ -508,8 +528,8 @@ th {
 }
 
 .container-profile {
-    max-width: 600px !important;
-    margin: 0rem auto !important;
+    max-width: 1000px !important;
+    margin: 2rem auto !important;
 }
 
 .container-password {
