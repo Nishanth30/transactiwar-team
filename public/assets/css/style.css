@@ -506,7 +506,6 @@ th {
 
 .container-confirm {
     max-width: 400px !important;
-    margin: 6rem auto;
 }
 
 /* View Profile */
@@ -731,7 +730,7 @@ th {
     margin: 10px 0;
 }
 
-.search-form + .results-container {
+.search-form+.results-container {
     margin-top: 0 !important;
 }
 

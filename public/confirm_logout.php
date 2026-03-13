@@ -21,8 +21,8 @@ require_login();
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container auth-container">
-        <div class="card text-center logout-card container-confirm">
+    <div class="container container-confirm mt-4">
+        <div class="card text-center logout-card">
             <h2 class="text-glow text-danger-glow">Confirm Logout?</h2>
 
             <p class="text-muted logout-text">
