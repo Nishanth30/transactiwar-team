@@ -1,7 +1,7 @@
 FROM php:8.2-apache
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public \
-    APP_PORT=8443 \
+    APP_PORT=443 \
     TLS_CERT_FILE=/etc/apache2/ssl/server.crt \
     TLS_KEY_FILE=/etc/apache2/ssl/server.key \
     GENERATE_SELF_SIGNED_TLS=1 \

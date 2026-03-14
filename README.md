@@ -18,25 +18,30 @@ This repository is focused on the assignment application itself:
 - Team ownership and module contracts: `docs/INTEROPERABILITY.md`
 - Branching workflow: `docs/BRANCHING_AND_DEPLOYMENT.md`
 - Docker architecture walkthrough: `docs/DockerCompose_Walkthrough.md`
+- VM deployment workflow: `docs/VM_DEPLOYMENT.md`
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - Git
+- VS Code with `Remote - SSH` (recommended for VM deployment)
 
 ## Quick Start
 
 1. Copy `docker/.env.example` to `docker/.env`.
 2. Set `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `SESSION_SECRET`.
-3. Choose an HTTPS port in `APP_PORT`.
+3. Choose a bind address in `APP_BIND` and host ports in `APP_HTTP_PORT` and `APP_PORT`.
 4. Set `CSRF_ALLOWED_ORIGIN` to match that exact HTTPS URL.
 5. Start the stack with Docker Compose.
-6. Open `https://localhost:<APP_PORT>/` in your browser.
+6. Open the exact URL from `CSRF_ALLOWED_ORIGIN` in your browser.
 
-Example local URL choices:
+Default deployment URL:
 
-- `APP_PORT=8443` -> `https://localhost:8443/`
-- `APP_PORT=8080` -> `https://localhost:8080/`
+- `APP_HTTP_PORT=80`, `APP_PORT=443` -> `http://<host>/` redirects to `https://<host>/`
+
+Example local URL choice when standard ports are busy:
+
+- `APP_HTTP_PORT=8080`, `APP_PORT=8443` -> `http://localhost:8080/` redirects to `https://localhost:8443/`
 
 ## Environment Setup
 
@@ -52,6 +57,8 @@ Required values in `docker/.env`:
 - `MYSQL_DATABASE`
 - `MYSQL_USER`
 - `MYSQL_PASSWORD`
+- `APP_BIND`
+- `APP_HTTP_PORT`
 - `APP_PORT`
 - `CSRF_ALLOWED_ORIGIN`
 - `APP_DIAGNOSTIC_MODE`
@@ -74,6 +81,8 @@ If `openssl` is not installed, generate any 64-hex-character random string using
 Recommended local default:
 
 ```dotenv
+APP_BIND=127.0.0.1
+APP_HTTP_PORT=8080
 APP_PORT=8443
 CSRF_ALLOWED_ORIGIN=https://localhost:8443
 TRUSTED_PROXIES=
@@ -87,17 +96,23 @@ TLS_SELF_SIGNED_DAYS=30
 If you run using `127.0.0.1`, set:
 
 ```dotenv
+APP_BIND=127.0.0.1
+APP_HTTP_PORT=8080
+APP_PORT=8443
 CSRF_ALLOWED_ORIGIN=https://127.0.0.1:8443
 ```
 
-If you prefer port `8080`, set:
+If you want deployment-style standard ports, set:
 
 ```dotenv
-APP_PORT=8080
-CSRF_ALLOWED_ORIGIN=https://localhost:8080
+APP_BIND=0.0.0.0
+APP_HTTP_PORT=80
+APP_PORT=443
+CSRF_ALLOWED_ORIGIN=https://10.96.1.242
 ```
 
 Use your real HTTPS origin in production (for example `https://app.example.com`).
+For direct VM exposure without a reverse proxy, set `APP_BIND=0.0.0.0` and use the VM IP or hostname in `CSRF_ALLOWED_ORIGIN`.
 If TLS is terminated at a reverse proxy, set `TRUSTED_PROXIES` to the proxy IP(s), for example:
 
 ```dotenv
@@ -125,7 +140,7 @@ Expected:
 Open the app:
 
 ```bash
-echo "https://localhost:$(awk -F= '/^APP_PORT=/{gsub(/\r/, \"\", $2); print $2}' docker/.env | tail -n1)/"
+awk -F= '/^CSRF_ALLOWED_ORIGIN=/{gsub(/\r/, "", $2); print $2}' docker/.env | tail -n1
 ```
 
 ## Smoke Test
@@ -144,9 +159,9 @@ After startup, verify core flows manually:
 Useful checks:
 
 ```bash
-APP_PORT_VAL="$(awk -F= '/^APP_PORT=/{gsub(/\r/, \"\", $2); print $2}' docker/.env | tail -n1)"
-curl -kisS "https://localhost:${APP_PORT_VAL}/login.php" | sed -n '1,40p'
-curl -kisS "https://localhost:${APP_PORT_VAL}/assets/css/style.css" | sed -n '1,20p'
+APP_ORIGIN_VAL="$(awk -F= '/^CSRF_ALLOWED_ORIGIN=/{gsub(/\r/, "", $2); print $2}' docker/.env | tail -n1)"
+curl -kisS "${APP_ORIGIN_VAL}/login.php" | sed -n '1,40p'
+curl -kisS "${APP_ORIGIN_VAL}/assets/css/style.css" | sed -n '1,20p'
 ```
 
 ## Verification Checklist
@@ -167,8 +182,8 @@ Expected lines include:
 Check app endpoint:
 
 ```bash
-APP_PORT_VAL="$(awk -F= '/^APP_PORT=/{gsub(/\r/, \"\", $2); print $2}' docker/.env | tail -n1)"
-curl -sk "https://localhost:${APP_PORT_VAL}"
+APP_ORIGIN_VAL="$(awk -F= '/^CSRF_ALLOWED_ORIGIN=/{gsub(/\r/, "", $2); print $2}' docker/.env | tail -n1)"
+curl -sk "${APP_ORIGIN_VAL}"
 ```
 
 Verify schema tables:
@@ -240,6 +255,27 @@ The seeded accounts currently created by the script are:
 
 You do not need to create these accounts manually when starting from a fresh Docker volume.
 
+## VM Deployment (VS Code Remote-SSH)
+
+For the assignment VM, use the dedicated guide in `docs/VM_DEPLOYMENT.md`.
+
+Minimum VM-specific `docker/.env` changes:
+
+```dotenv
+APP_BIND=0.0.0.0
+APP_HTTP_PORT=80
+APP_PORT=443
+CSRF_ALLOWED_ORIGIN=https://10.96.1.242
+TLS_CERT_CN=10.96.1.242
+TLS_CERT_SAN=IP:10.96.1.242
+```
+
+Before the first VM boot, remove stale local-development certs if they exist so the container regenerates a self-signed certificate for the VM IP:
+
+```bash
+rm -f docker/certs/server.crt docker/certs/server.key
+```
+
 ## Useful Commands
 
 Start services:
@@ -293,7 +329,7 @@ Make sure `CSRF_ALLOWED_ORIGIN` exactly matches the browser URL, including:
 
 - `https`
 - hostname (`localhost` vs `127.0.0.1`)
-- port (`8080`, `8443`, etc.)
+- port when it is non-standard (`8443`, etc.)
 
 App not reachable:
 
@@ -301,6 +337,13 @@ App not reachable:
 docker compose --env-file docker/.env -f docker/docker-compose.yml up -d --force-recreate app
 docker compose --env-file docker/.env -f docker/docker-compose.yml ps
 ```
+
+For VM deployment, confirm:
+
+- `APP_BIND=0.0.0.0`
+- `CSRF_ALLOWED_ORIGIN` uses the exact VM URL
+- `TLS_CERT_CN` and `TLS_CERT_SAN` match the VM IP or hostname
+- another machine can reach `https://<vm-ip>/` on `443`
 
 Access denied for DB user after env changes:
 
