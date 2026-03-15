@@ -344,7 +344,28 @@ input[type="number"] {
 }
 
 /* ================================================================
-   9. TABLES (Bootstrap override)
+   9. MODAL (Bootstrap override)
+   ================================================================ */
+.modal-content {
+    background: rgba(10, 12, 25, 0.92);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    border: 1px solid var(--tw-glass-border);
+    border-radius: var(--tw-radius);
+    color: var(--tw-text);
+    box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
+}
+
+.modal-backdrop.show {
+    opacity: 0.6;
+}
+
+.modal-header .btn-close-white {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* ================================================================
+   10. TABLES (Bootstrap override)
    ================================================================ */
 .table {
     --bs-table-bg: transparent;

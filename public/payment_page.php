@@ -88,7 +88,7 @@ logActivity(LOG_PAGE_VIEW);
                     </div>
                 </div>
 
-                <form action="/payment_page.php" method="POST">
+                <form id="transferForm" action="/payment_page.php" method="POST">
                     <?= csrfField() ?>
                     <input type="hidden" name="transfer_nonce" value="<?= escape_attr($transferNonce) ?>">
                     <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
@@ -106,12 +106,84 @@ logActivity(LOG_PAGE_VIEW);
                                maxlength="500" placeholder="Add a note&hellip;">
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-100 mt-2">Authorize Transfer</button>
+                    <button type="submit" class="btn btn-primary w-100 mt-2">
+                        Authorize Transfer
+                    </button>
                 </form>
             </div>
         </div>
     </div>
 
+    <!-- Confirmation Modal -->
+    <div class="modal fade" id="confirmModal" tabindex="-1"
+         aria-labelledby="confirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title text-glow" id="confirmModalLabel">Confirm Transfer</h5>
+                    <button type="button" class="btn-close btn-close-white"
+                            data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-3">Please review the details before authorizing.</p>
+
+                    <dl class="row mb-0">
+                        <dt class="col-4 text-muted">To</dt>
+                        <dd class="col-8 text-cyan fw-bold" id="confirmRecipient"></dd>
+
+                        <dt class="col-4 text-muted">Amount</dt>
+                        <dd class="col-8 font-mono fw-bold" id="confirmAmount"></dd>
+
+                        <dt class="col-4 text-muted">Remark</dt>
+                        <dd class="col-8" id="confirmRemark"></dd>
+                    </dl>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary"
+                            data-bs-dismiss="modal">Go Back</button>
+                    <button type="button" id="confirmBtn" class="btn btn-primary">
+                        Authorize Transfer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <?php include __DIR__ . '/footer.php'; ?>
+
+    <script nonce="<?= get_csp_nonce() ?>">
+    (function () {
+        var form = document.getElementById('transferForm');
+        if (!form || typeof bootstrap === 'undefined') return;
+
+        var confirmBtn = document.getElementById('confirmBtn');
+        var modalEl = document.getElementById('confirmModal');
+        var modal = new bootstrap.Modal(modalEl);
+        var confirmed = false;
+
+        var recipientName = <?= escape_js($receiverUsername) ?>;
+
+        form.addEventListener('submit', function (e) {
+            if (confirmed) return;
+            e.preventDefault();
+
+            var amount = form.elements['amount'].value;
+            var remark = form.elements['remark'].value;
+
+            document.getElementById('confirmRecipient').textContent = recipientName;
+            document.getElementById('confirmAmount').textContent = '\u20B9' + parseFloat(amount).toFixed(2);
+            document.getElementById('confirmRemark').textContent = remark || '\u2014';
+
+            modal.show();
+        });
+
+        confirmBtn.addEventListener('click', function () {
+            confirmed = true;
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Processing\u2026';
+            form.submit();
+        });
+    })();
+    </script>
 </body>
 </html>
