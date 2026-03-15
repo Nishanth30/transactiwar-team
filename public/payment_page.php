@@ -46,8 +46,12 @@ if (!$receiver) {
     exit;
 }
 
+// H5 FIX: Key the nonce by target UUID so each tab gets its own slot.
+// The old single-slot design meant Tab B overwrote Tab A's nonce, either
+// causing a DoS (Tab A's form becomes invalid) or leaving the nonce unbound
+// to a specific recipient.
 $transferNonce = bin2hex(random_bytes(16));
-$_SESSION['transfer_nonce'] = $transferNonce;
+$_SESSION['transfer_nonce_' . $targetUuid] = $transferNonce;
 
 $receiverUsername = $receiver['username'];
 

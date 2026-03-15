@@ -6,16 +6,23 @@ require_login();
 verifyCsrf();
 
 
-$nonce = post_str('transfer_nonce');
-if (!$nonce || !isset($_SESSION['transfer_nonce']) || 
-    !hash_equals($_SESSION['transfer_nonce'], $nonce)) {
+// H5 FIX: Nonce is keyed by target UUID, so each tab holds its own slot.
+// This prevents Tab B from overwriting Tab A's nonce (DoS) and binds the
+// nonce to a specific recipient (the attacker cannot reuse a captured nonce
+// for a different transfer target).
+$nonce          = post_str('transfer_nonce');
+$nonceTargetId  = sanitize_uuid(post_str('target_uuid'));
+$nonceKey       = 'transfer_nonce_' . ($nonceTargetId ?? '');
+
+if (!$nonce || !isset($_SESSION[$nonceKey]) ||
+    !hash_equals($_SESSION[$nonceKey], $nonce)) {
     logActivity(LOG_TRANSFER_INVALID);
     $_SESSION['transfer_error'] = "Invalid or expired transfer session.";
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 }
 // Consume immediately — one use only
-unset($_SESSION['transfer_nonce']);
+unset($_SESSION[$nonceKey]);
 
 $_SESSION['transfer_result'] = "fail";
 
