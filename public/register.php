@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash_error = 'Registration failed.';
             }
         } catch (Throwable $e) {
-            error_log($e->getMessage());
+            error_log('Registration handler error: ' . get_class($e) . ' code=' . $e->getCode());
             $flash_error = 'Registration failed.';
         }
     }

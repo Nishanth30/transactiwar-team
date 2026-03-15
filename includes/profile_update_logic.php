@@ -211,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            error_log("Profile Update Error: " . $e->getMessage());
+            error_log('Profile Update Error: ' . get_class($e) . ' code=' . $e->getCode());
             $error_message = "A database error occurred while saving your profile.";
             if ($new_file_destination !== null && file_exists($new_file_destination)) {
                 unlink($new_file_destination);

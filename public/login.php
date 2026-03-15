@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flashError = 'Invalid credentials.';
             }
         } catch (Throwable $e) {
-            error_log($e->getMessage());
+            error_log('Login handler error: ' . get_class($e) . ' code=' . $e->getCode());
             $flashError = 'Login failed.';
             logActivity(LOG_INVALID_INPUT);
         }

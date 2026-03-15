@@ -138,7 +138,7 @@ function logActivity(string $event): void {
         ));
         closelog();
 
-        error_log('Activity log DB write failed: ' . $e->getMessage());
+        error_log('Activity log DB write failed: ' . get_class($e) . ' code=' . $e->getCode());
     }
 }
 
@@ -151,9 +151,16 @@ function logActivity(string $event): void {
  *   logSecurityEvent(LOG_BRUTE_FORCE, 'user: admin, attempts: 10');
  */
 function logSecurityEvent(string $event, string $detail = ''): void {
-    // Sanitize detail
-    $detail  = preg_replace('/[^\w\s\-:.\/]/', '', $detail);
-    $detail  = substr($detail, 0, 200);
+    // M8 FIX: Preserve printable ASCII so forensic characters like < > = @ & "
+    // survive into the log. The old regex stripped them, making logged attack
+    // payloads (e.g. <script>alert(1)</script>) unreadable during investigation.
+    // Non-printable and non-ASCII bytes are hex-escaped to prevent log injection
+    // (newlines, null bytes, control chars, and multibyte sequences that could
+    // confuse log parsers or terminals).
+    $detail = preg_replace_callback('/[^\x20-\x7E]/', static function (array $m): string {
+        return '\\x' . bin2hex($m[0]);
+    }, $detail);
+    $detail = substr($detail, 0, 200);
 
     $fullEvent = $detail !== ''
         ? $event . ':' . $detail
@@ -336,7 +343,7 @@ function getRecentLogs(int $limit = 50): array {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
-        error_log('getRecentLogs error: ' . $e->getMessage());
+        error_log('getRecentLogs error: ' . get_class($e) . ' code=' . $e->getCode());
         return [];
     }
 }
@@ -381,7 +388,7 @@ function getLogsByIp(string $ip, int $limit = 100): array {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
-        error_log('getLogsByIp error: ' . $e->getMessage());
+        error_log('getLogsByIp error: ' . get_class($e) . ' code=' . $e->getCode());
         return [];
     }
 }
@@ -436,7 +443,7 @@ function getSecurityEvents(int $limit = 100): array {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
-        error_log('getSecurityEvents error: ' . $e->getMessage());
+        error_log('getSecurityEvents error: ' . get_class($e) . ' code=' . $e->getCode());
         return [];
     }
 }
@@ -490,7 +497,7 @@ function getAttackSummaryByIp(): array {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
-        error_log('getAttackSummaryByIp error: ' . $e->getMessage());
+        error_log('getAttackSummaryByIp error: ' . get_class($e) . ' code=' . $e->getCode());
         return [];
     }
 }
@@ -534,7 +541,7 @@ function getUserLoginHistory(int $userId, int $limit = 20): array {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
-        error_log('getUserLoginHistory error: ' . $e->getMessage());
+        error_log('getUserLoginHistory error: ' . get_class($e) . ' code=' . $e->getCode());
         return [];
     }
 }
@@ -584,7 +591,7 @@ function countRecentFailedLogins(string $ip): int {
         return (int)$row['attempts'];
 
     } catch (Throwable $e) {
-        error_log('countRecentFailedLogins error: ' . $e->getMessage());
+        error_log('countRecentFailedLogins error: ' . get_class($e) . ' code=' . $e->getCode());
         return 0;
     }
 }
@@ -628,7 +635,7 @@ function recordFailedLogin(string $ip): void {
         }
 
     } catch (Throwable $e) {
-        error_log('recordFailedLogin error: ' . $e->getMessage());
+        error_log('recordFailedLogin error: ' . get_class($e) . ' code=' . $e->getCode());
     }
 }
 
@@ -654,7 +661,7 @@ function _lockIp(string $ip): void {
         $stmt->execute([$lockedUntil, $ip]);
 
     } catch (Throwable $e) {
-        error_log('_lockIp error: ' . $e->getMessage());
+        error_log('_lockIp error: ' . get_class($e) . ' code=' . $e->getCode());
     }
 }
 
@@ -679,7 +686,7 @@ function _resetLoginAttempts(string $ip): void {
         $stmt->execute([$ip]);
 
     } catch (Throwable $e) {
-        error_log('_resetLoginAttempts error: ' . $e->getMessage());
+        error_log('_resetLoginAttempts error: ' . get_class($e) . ' code=' . $e->getCode());
     }
 }
 
@@ -720,7 +727,7 @@ function isIpBruteForcing(): bool {
         return false;
 
     } catch (Throwable $e) {
-        error_log('isIpBruteForcing error: ' . $e->getMessage());
+        error_log('isIpBruteForcing error: ' . get_class($e) . ' code=' . $e->getCode());
         return false;
     }
 }
@@ -746,7 +753,7 @@ function clearLoginAttempts(string $ip): void {
         $stmt->execute([$ip]);
 
     } catch (Throwable $e) {
-        error_log('clearLoginAttempts error: ' . $e->getMessage());
+        error_log('clearLoginAttempts error: ' . get_class($e) . ' code=' . $e->getCode());
     }
 }
 
@@ -784,7 +791,7 @@ function getLiveActivity(int $minutes = 5): array {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
-        error_log('getLiveActivity error: ' . $e->getMessage());
+        error_log('getLiveActivity error: ' . get_class($e) . ' code=' . $e->getCode());
         return [];
     }
 }

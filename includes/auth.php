@@ -21,11 +21,57 @@ const REGISTRATION_ATTEMPT_WINDOW = 900;    // reset counter after 15 min inacti
  * Real bcrypt hash used when user is missing.
  * Prevents timing-based user enumeration.
  *
- * IMPORTANT: Regenerate with password_hash('dummy', PASSWORD_DEFAULT)
- * and replace - never reuse a hash from the internet.
+ * IMPORTANT: Must be generated with the pre-hash scheme below:
+ *   php -r "echo password_hash(base64_encode(hash('sha384', 'dummy_never_matches', true)), PASSWORD_DEFAULT);"
+ * Never reuse a hash from the internet.
  */
 const DUMMY_HASH =
-    '$2y$12$KIXsvMrxRbLQn5oTMHuSPOY/hGKPSfLpFBG7GiKVcI5Fg2NeRRdYu';
+    '$2y$12$x9/zWz8mWQjBEkOjVY/jx.mTP/Z59pTcwTCxxAtF9qTJxNyAA5Hk.';
+
+/*
+ * M6 FIX: Pre-hash passwords with SHA-384 before bcrypt.
+ *
+ * bcrypt silently truncates input at 72 bytes. With MAX_PASSWORD_LEN = 128,
+ * users can create passwords where only the first 72 bytes are hashed —
+ * two passwords sharing the same 72-byte prefix are considered identical.
+ *
+ * SHA-384 produces 48 raw bytes (64 base64 chars), safely under bcrypt's
+ * 72-byte limit, while ensuring the ENTIRE password — regardless of length
+ * — contributes to the hash.
+ *
+ * NOTE: Existing password hashes (without pre-hash) must be migrated on
+ * next login. See safe_password_verify() for the transparent upgrade path.
+ */
+function safe_password_hash(string $password): string
+{
+    $preHash = base64_encode(hash('sha384', $password, true));
+    return password_hash($preHash, PASSWORD_DEFAULT);
+}
+
+function safe_password_verify(string $password, string $hash): bool
+{
+    // Try the new pre-hash scheme first.
+    $preHash = base64_encode(hash('sha384', $password, true));
+    if (password_verify($preHash, $hash)) {
+        return true;
+    }
+
+    // Fall back to legacy direct bcrypt for hashes that predate M6.
+    // On successful legacy verify, the caller should rehash with
+    // safe_password_hash() to migrate the stored hash.
+    return password_verify($password, $hash);
+}
+
+function needs_rehash(string $hash): bool
+{
+    // If password_needs_rehash returns true, OR if the hash was created
+    // without the pre-hash scheme (legacy), it needs upgrading.
+    // We detect legacy hashes by checking if they verify with a pre-hashed
+    // input — but that requires the plaintext, so the caller checks this
+    // after a successful safe_password_verify() by attempting the pre-hash
+    // path alone. If only the legacy path matched, rehash is needed.
+    return password_needs_rehash($hash, PASSWORD_DEFAULT);
+}
 
 function ensure_session_version_support(PDO $pdo): void
 {
@@ -474,7 +520,7 @@ function change_password_for_user(
         }
 
         $storedHash = (string) $user['password_hash'];
-        $currentMatches = password_verify($currentPassword, $storedHash);
+        $currentMatches = safe_password_verify($currentPassword, $storedHash);
         usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
 
         if (!$currentMatches) {
@@ -483,12 +529,12 @@ function change_password_for_user(
             return 'invalid_current';
         }
 
-        if (password_verify($newPassword, $storedHash)) {
+        if (safe_password_verify($newPassword, $storedHash)) {
             $pdo->rollBack();
             return 'same_password';
         }
 
-        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+        $newHash = safe_password_hash($newPassword);
         $updateStmt = $pdo->prepare("
             UPDATE users
             SET password_hash = :password_hash,
@@ -510,7 +556,7 @@ function change_password_for_user(
             $pdo->rollBack();
         }
 
-        error_log('Password change failed: ' . $e->getMessage());
+        error_log('Password change failed: ' . get_class($e) . ' code=' . $e->getCode());
         return false;
     }
 }
@@ -542,7 +588,7 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
         return false;
     }
 
-    $hash = password_hash($password, PASSWORD_DEFAULT);
+    $hash = safe_password_hash($password);
 
     try {
         $stmt = $pdo->prepare("
@@ -574,7 +620,7 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
             return 'duplicate';
         }
 
-        error_log('Register failed: ' . $e->getMessage());
+        error_log('Register failed: ' . get_class($e) . ' code=' . $e->getCode());
         return false;
     }
 }
@@ -587,7 +633,7 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     try {
         ensure_session_version_support($pdo);
     } catch (Throwable $e) {
-        error_log('Session version support missing during login: ' . $e->getMessage());
+        error_log('Session version support missing during login: ' . get_class($e) . ' code=' . $e->getCode());
         if (function_exists('logSecurityEvent')) {
             logSecurityEvent(LOG_SUSPICIOUS, 'session_version_unavailable_login');
         }
@@ -651,7 +697,7 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
 
     // Always verify against a real hash to resist timing-based user enumeration.
     $hashToCheck = $user['password_hash'] ?? DUMMY_HASH;
-    $valid = password_verify($password, $hashToCheck);
+    $valid = safe_password_verify($password, $hashToCheck);
 
     usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
 
@@ -665,6 +711,26 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
 
     // Successful login clears only this identifier+IP throttle key.
     clear_failed_attempts($pdo, $attemptKey);
+
+    // M6: Transparently migrate legacy hashes (pre-M6, no SHA-384 pre-hash)
+    // to the new scheme on successful login. The pre-hash path in
+    // safe_password_verify tried first; if only the legacy fallback matched,
+    // the hash needs upgrading.
+    $preHash = base64_encode(hash('sha384', $password, true));
+    if (!password_verify($preHash, $hashToCheck)) {
+        // Legacy hash — upgrade it now while we have the plaintext.
+        try {
+            $pdo->prepare("
+                UPDATE users SET password_hash = :hash WHERE id = :id LIMIT 1
+            ")->execute([
+                'hash' => safe_password_hash($password),
+                'id'   => (int) $user['id'],
+            ]);
+        } catch (Throwable $e) {
+            // Non-fatal: login succeeds, rehash retried next login.
+            error_log('M6 rehash failed for user ' . (int) $user['id'] . ': code=' . $e->getCode());
+        }
+    }
 
     session_regenerate_id(true);
 
@@ -765,7 +831,7 @@ function require_login(): void
             exit;
         }
     } catch (Throwable $e) {
-        error_log('require_login session version check failed: ' . $e->getMessage());
+        error_log('require_login session version check failed: ' . get_class($e) . ' code=' . $e->getCode());
         session_unset();
         session_destroy();
         header('Location: /login.php');

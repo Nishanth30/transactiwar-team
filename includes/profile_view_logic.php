@@ -62,7 +62,7 @@ try {
 }
 catch (PDOException $e) {
     // 🆕 UPGRADED: Log the system failure via the framework before dying
-    error_log("Profile View DB Error: " . $e->getMessage());
+    error_log('Profile View DB Error: ' . get_class($e) . ' code=' . $e->getCode());
     logSecurityEvent(LOG_SUSPICIOUS, "Database error on profile view");
     die("A system error occurred. Our engineers have been notified.");
 }
