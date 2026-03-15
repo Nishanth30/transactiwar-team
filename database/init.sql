@@ -58,7 +58,8 @@ CREATE TABLE activity_logs (
       ON UPDATE RESTRICT ON DELETE SET NULL,
 
     INDEX idx_activity_logs_user_time (user_id, created_at),
-    INDEX idx_activity_logs_username_time (username_snapshot, created_at)
+    INDEX idx_activity_logs_username_time (username_snapshot, created_at),
+    INDEX idx_activity_logs_client_ip (client_ip, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- 4) Enforce: profile updates allowed except username
