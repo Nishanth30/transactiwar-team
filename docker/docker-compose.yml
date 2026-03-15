@@ -8,6 +8,11 @@ services:
     command: ["mysqld", "--local-infile=0", "--skip-name-resolve"]
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in docker/.env}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-app_database}
@@ -62,8 +67,22 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     init: true
+    # M10 FIX: Make the container filesystem read-only so an attacker who
+    # achieves RCE cannot modify PHP files, Apache configs, or plant backdoors.
+    # tmpfs mounts provide the writable scratch space Apache and PHP need.
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64M
+      - /var/run/apache2:noexec,nosuid,size=1M
+      - /var/lock/apache2:noexec,nosuid,size=1M
+      - /var/log/apache2:noexec,nosuid,size=32M
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
     depends_on:
       db:
         condition: service_healthy
