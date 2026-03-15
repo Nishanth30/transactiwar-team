@@ -13,10 +13,11 @@ require_once __DIR__ . '/request.php';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 define('CSRF_TOKEN_BYTES',   32);              // 256-bit raw entropy
-define('CSRF_SESSION_KEY',   'csrf_token');
-define('CSRF_FIELD_NAME',    'csrf_token');
-define('CSRF_HEADER_NAME',   'X-CSRF-Token'); // for AJAX requests
-define('CSRF_MAX_AGE',       3600);            // token expires after 1 hour (seconds)
+define('CSRF_POOL_KEY',     'csrf_pool');      // H3 FIX: session key for token pool
+define('CSRF_FIELD_NAME',   'csrf_token');
+define('CSRF_HEADER_NAME',  'X-CSRF-Token');   // for AJAX requests
+define('CSRF_MAX_AGE',      3600);             // token expires after 1 hour (seconds)
+define('CSRF_MAX_TOKENS',   5);                // max concurrent tokens (multi-tab support)
 define('CSRF_ALLOWED_ORIGIN', trim((string) (getenv('CSRF_ALLOWED_ORIGIN') ?: ''))); // e.g. https://example.com
 
 
@@ -136,68 +137,93 @@ function _csrfCheckOrigin(): bool {
 
 
 // ─── Token Lifecycle ─────────────────────────────────────────────────────────
+//
+// H3 FIX: Replaced single-slot token with a bounded pool (CSRF_MAX_TOKENS).
+//
+// Problem: The old design stored exactly one token in $_SESSION['csrf_token'].
+// When Tab A submitted a form, csrfRotate() overwrote the session token,
+// invalidating the token already embedded in Tab B's form. An attacker could
+// weaponize this by tricking the victim into visiting any POST-protected page,
+// thereby invalidating CSRF tokens in every other open tab.
+//
+// Fix: Each page render adds a fresh token to a pool. Validation searches the
+// pool and removes only the consumed token. Other tabs' tokens remain valid.
+// The pool is capped at CSRF_MAX_TOKENS and expired entries are pruned on
+// every generation, so memory growth is bounded.
 
 /**
- * Generate a fresh cryptographically secure HMAC-bound token.
+ * Generate a fresh HMAC-bound token and add it to the session pool.
  *
- * The raw token (256 bits of CSPRNG entropy) is HMAC'd with a server-side
- * secret so that a token from session A is always invalid in session B,
- * defeating session-fixation-assisted CSRF attacks.
+ * Returns the new token string ("<hmac>.<raw_hex>").
  *
- * Stored format: "<hmac>.<raw_hex>"
- *   hmac    — SHA-256 HMAC of raw_hex keyed by session_id(), 64 hex chars
- *   raw_hex — bin2hex(random_bytes(32)),                      64 hex chars
+ * Pool maintenance:
+ *   - Expired tokens are pruned on every call.
+ *   - If the pool exceeds CSRF_MAX_TOKENS, the oldest entry is evicted.
+ *   - Legacy single-slot key ('csrf_token') is cleaned up on first call.
  */
-function csrfGenerate(): void {
+function csrfGenerate(): string {
     _csrfAssertSession();
-    // Generate secret if missing (e.g. session existed before secret was introduced)
+
+    // Ensure per-session HMAC secret exists.
     if (empty($_SESSION['csrf_secret'])) {
         $_SESSION['csrf_secret'] = bin2hex(random_bytes(32));
     }
 
-    $raw  = bin2hex(random_bytes(CSRF_TOKEN_BYTES));  // 64 hex chars, 256 bits
-    $hmac = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);  // bind to server-side secret
-    $_SESSION[CSRF_SESSION_KEY] = [
-        'token'      => $hmac . '.' . $raw,
-        'created_at' => time(),
-    ];
-}
+    // One-time migration: drop the old single-slot key so it does not
+    // confuse debugging or consume session storage indefinitely.
+    unset($_SESSION['csrf_token']);
 
-/**
- * Ensure a valid, non-expired token exists. Create one if missing or expired.
- */
-function csrfEnsure(): void {
-    _csrfAssertSession();
+    // Build the new token.
+    $raw   = bin2hex(random_bytes(CSRF_TOKEN_BYTES));            // 64 hex chars
+    $hmac  = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);
+    $token = $hmac . '.' . $raw;
+    $now   = time();
 
-    $entry = $_SESSION[CSRF_SESSION_KEY] ?? null;
-
-    $needsNew =
-        $entry === null ||                                  // never set
-        !is_array($entry) ||                               // corrupted
-        empty($entry['token']) ||                          // empty token
-        !isset($entry['created_at']) ||                    // no timestamp
-        (time() - $entry['created_at']) > CSRF_MAX_AGE;   // expired
-
-    if ($needsNew) {
-        csrfGenerate();
+    // Initialise / sanitise the pool.
+    if (!isset($_SESSION[CSRF_POOL_KEY]) || !is_array($_SESSION[CSRF_POOL_KEY])) {
+        $_SESSION[CSRF_POOL_KEY] = [];
     }
+
+    // Prune expired entries.
+    $_SESSION[CSRF_POOL_KEY] = array_values(array_filter(
+        $_SESSION[CSRF_POOL_KEY],
+        static fn(array $e): bool => ($now - ($e['created_at'] ?? 0)) <= CSRF_MAX_AGE
+    ));
+
+    // Append the new token.
+    $_SESSION[CSRF_POOL_KEY][] = [
+        'token'      => $token,
+        'created_at' => $now,
+    ];
+
+    // Evict the oldest if the pool is over capacity.
+    if (count($_SESSION[CSRF_POOL_KEY]) > CSRF_MAX_TOKENS) {
+        $_SESSION[CSRF_POOL_KEY] = array_slice(
+            $_SESSION[CSRF_POOL_KEY],
+            -CSRF_MAX_TOKENS
+        );
+    }
+
+    return $token;
 }
 
 /**
- * Return the current token string (the full "<hmac>.<raw>" value).
- * Generates a new token if one does not exist or has expired.
+ * Return the CSRF token for the current request.
+ *
+ * A fresh token is generated once per HTTP request (cached via static) so
+ * that every form and meta tag on the same page shares the same value,
+ * while different page loads (tabs) each receive a unique token.
  */
 function csrfToken(): string {
-    csrfEnsure();
-    return $_SESSION[CSRF_SESSION_KEY]['token'];
-}
+    // Per-request cache: all forms rendered in the same response share one
+    // token so we only consume one pool slot per page load.
+    static $requestToken = null;
+    if ($requestToken !== null) {
+        return $requestToken;
+    }
 
-/**
- * Rotate the token. Call after every successful validation.
- * Prevents replay attacks — each token is single-use.
- */
-function csrfRotate(): void {
-    csrfGenerate();
+    $requestToken = csrfGenerate();
+    return $requestToken;
 }
 
 
@@ -242,64 +268,74 @@ function csrfMeta(): string {
 /**
  * Core validation logic — shared by form and AJAX validators.
  *
- * Verifies three things:
- *   1. Session contains a valid, non-expired token entry.
- *   2. Submitted value is non-empty and matches via constant-time comparison.
- *   3. The HMAC embedded in the token is valid for the current session ID,
- *      preventing cross-session token transplant attacks.
+ * H3 FIX: Searches the token pool instead of comparing against a single
+ * slot. On match the consumed token is removed (single-use preserved).
+ *
+ * Verifies three things per pool entry:
+ *   1. The entry is not expired.
+ *   2. The submitted value matches via constant-time comparison.
+ *   3. The HMAC embedded in the token is valid for the current session
+ *      secret, preventing cross-session token transplant attacks.
  *
  * Returns true on success, false on any failure.
  */
 function _csrfValidateToken(string $submitted): bool {
     _csrfAssertSession();
 
-    // Fail safely if secret is missing
-    if (empty($_SESSION['csrf_secret'])) {
+    // Fail safely if secret or submitted value is missing.
+    if (empty($_SESSION['csrf_secret']) || $submitted === '') {
         return false;
     }
 
-    $entry = $_SESSION[CSRF_SESSION_KEY] ?? null;
-
-    // Reject if session has no token at all
-    if (!is_array($entry) || empty($entry['token']) || empty($entry['created_at'])) {
+    $pool = $_SESSION[CSRF_POOL_KEY] ?? [];
+    if (!is_array($pool) || $pool === []) {
         return false;
     }
 
-    // Reject expired tokens (extra server-side check beyond session lifetime)
-    if ((time() - $entry['created_at']) > CSRF_MAX_AGE) {
-        csrfRotate(); // clean up expired token
-        return false;
-    }
-
-    // Reject empty submitted value
-    if ($submitted === '') {
-        return false;
-    }
-
-    $stored = $entry['token'];
-
-    // ── Step 1: Constant-time full-token comparison ──────────────────────────
-    // hash_equals prevents timing oracle — must run even if we later reject
-    if (!hash_equals($stored, $submitted)) {
-        return false;
-    }
-
-    // ── Step 2: HMAC session-binding verification ────────────────────────────
-    // Format: "<hmac>.<raw_hex>"
-    // Re-derive the expected HMAC from the raw portion and the server-side
-    // secret. If the token was lifted from a different session the HMAC won't match.
+    // Pre-parse the submitted token so we only do it once.
     $parts = explode('.', $submitted, 2);
     if (count($parts) !== 2) {
-        return false; // malformed token
+        return false; // malformed
     }
-
     [$submittedHmac, $raw] = $parts;
 
-    // Constant-time comparison for the HMAC portion as well
+    // Re-derive the expected HMAC once — it is the same for every pool entry
+    // because all tokens in the pool share the same session secret.
     $expectedHmac = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);
+
+    // ── Step 1: Verify the HMAC (session-binding) ────────────────────────────
     if (!hash_equals($expectedHmac, $submittedHmac)) {
         return false;
     }
+
+    // ── Step 2: Search the pool for a matching, non-expired entry ────────────
+    $now          = time();
+    $matchedIndex = null;
+
+    foreach ($pool as $i => $entry) {
+        if (!is_array($entry) || empty($entry['token']) || empty($entry['created_at'])) {
+            continue; // corrupt entry
+        }
+
+        // Skip expired tokens.
+        if (($now - (int) $entry['created_at']) > CSRF_MAX_AGE) {
+            continue;
+        }
+
+        // Constant-time full-token comparison.
+        if (hash_equals($entry['token'], $submitted)) {
+            $matchedIndex = $i;
+            break;
+        }
+    }
+
+    if ($matchedIndex === null) {
+        return false;
+    }
+
+    // ── Step 3: Consume the token (single-use) ──────────────────────────────
+    unset($_SESSION[CSRF_POOL_KEY][$matchedIndex]);
+    $_SESSION[CSRF_POOL_KEY] = array_values($_SESSION[CSRF_POOL_KEY]);
 
     return true;
 }
@@ -309,7 +345,8 @@ function _csrfValidateToken(string $submitted): bool {
  * Call this at the TOP of every POST handler before reading $_POST.
  *
  * Also validates the Origin/Referer header when CSRF_ALLOWED_ORIGIN is set.
- * Dies with 403 on failure. Rotates token on success.
+ * Dies with 403 on failure. On success the consumed token is removed from the
+ * pool by _csrfValidateToken() — no separate rotation step needed.
  */
 function verifyCsrf(): void {
     // Only enforce on state-changing methods
@@ -329,8 +366,7 @@ function verifyCsrf(): void {
         _csrfFail('form_token_invalid');
     }
 
-    // Success — rotate token to prevent replay
-    csrfRotate();
+    // Token already consumed (removed from pool) by _csrfValidateToken().
 }
 
 /**
@@ -341,7 +377,8 @@ function verifyCsrf(): void {
  * HTML form, which provides an additional implicit layer of protection.
  *
  * Also validates the Origin header when CSRF_ALLOWED_ORIGIN is set.
- * Dies with 403 on failure. Rotates token on success.
+ * Dies with 403 on failure. On success the consumed token is removed from the
+ * pool by _csrfValidateToken().
  */
 function verifyCsrfAjax(): void {
     $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? '');
@@ -361,7 +398,7 @@ function verifyCsrfAjax(): void {
         _csrfFail('ajax_token_invalid');
     }
 
-    csrfRotate();
+    // Token already consumed (removed from pool) by _csrfValidateToken().
 }
 
 /**
