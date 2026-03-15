@@ -33,22 +33,13 @@ unset($_SESSION['transfer_complete']);
 
             <form method="GET" action="/searchbox.php" class="search-form">
                 <div class="search-input-wrapper">
-                    <input type="text" name="q" id="searchbar" placeholder="Enter sample username...">
+                    <input type="text" name="q" id="searchbar" placeholder="Enter username or user ID...">
                 </div>
                 <button type="submit" class="btn-primary btn-search">Search</button>
             </form>
-            <p class="text-muted mt-2">Sample Users : nishanth, tejas, divyansh, harshavardhan, vrishin, trudy</p>
+            <p class="text-muted mt-2">Search by exact username or public user ID (UUID)</p>
             <div class="results-container mt-4">
                 <?php
-                $sampleUsernames = [
-                    'nishanth',
-                    'tejas',
-                    'divyansh',
-                    'harshavardhan',
-                    'vrishin',
-                    'trudy',
-                ];
-
                 $query = sanitize_search(get_str('q'));
                 $searchTerm = trim($query);
 
@@ -60,71 +51,44 @@ unset($_SESSION['transfer_complete']);
                     die("<p class='error-msg'>Database connection failed.</p>");
                 }
 
+                // Determine if input is a UUID or a username
+                $isUuid = ($searchTerm !== '' && sanitize_uuid($searchTerm) !== null);
                 $searchLooksValid = true;
-                if ($searchTerm !== '') {
+
+                if ($searchTerm !== '' && !$isUuid) {
                     $searchLooksValid = validate_username($searchTerm);
                 }
 
                 $rows = [];
-                if ($searchLooksValid) {
-                    $usernameFilterParams = [];
-                    $usernameFilterPlaceholders = [];
-                    foreach ($sampleUsernames as $idx => $username) {
-                        $nameKey = ':sample_' . $idx;
-                        $usernameFilterPlaceholders[] = $nameKey;
-                        $usernameFilterParams[$nameKey] = $username;
+                if ($searchTerm !== '' && $searchLooksValid) {
+                    if ($isUuid) {
+                        // Search by public user ID (UUID) — exact match
+                        $stmt = $pdo->prepare(
+                            "SELECT username FROM users WHERE public_id = :search_val LIMIT 1"
+                        );
+                        $stmt->execute([':search_val' => sanitize_uuid($searchTerm)]);
+                    } else {
+                        // Search by username — exact match
+                        $stmt = $pdo->prepare(
+                            "SELECT username FROM users WHERE username = :search_val LIMIT 1"
+                        );
+                        $stmt->execute([':search_val' => $searchTerm]);
                     }
-
-                    $orderByCaseParts = [];
-                    $orderParams = [];
-                    foreach ($sampleUsernames as $idx => $username) {
-                        $orderKey = ':order_' . $idx;
-                        $orderByCaseParts[] = "WHEN {$orderKey} THEN {$idx}";
-                        $orderParams[$orderKey] = $username;
-                    }
-
-                    $sql = "
-                        SELECT username
-                        FROM users
-                        WHERE username IN (" . implode(', ', $usernameFilterPlaceholders) . ")
-                    ";
-
-                    $executeParams = array_merge($usernameFilterParams, $orderParams);
-                    if ($searchTerm !== '') {
-                        $sql .= " AND username = :search_username";
-                        $executeParams[':search_username'] = $searchTerm;
-                    }
-
-                    $sql .= "
-                        ORDER BY CASE username
-                            " . implode(' ', $orderByCaseParts) . "
-                            ELSE 999
-                        END
-                        LIMIT 6
-                    ";
-
-                    $stmt = $pdo->prepare($sql);
-                    $stmt->execute($executeParams);
                     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                } elseif ($searchTerm !== '') {
+                } elseif ($searchTerm !== '' && !$searchLooksValid) {
                     logActivity(LOG_INVALID_INPUT);
                 }
 
                 if (count($rows) === 0) {
                     if ($searchTerm !== '' && !$searchLooksValid) {
-                        echo "<p class='error-msg'>Use a valid sample username.</p>";
+                        echo "<p class='error-msg'>Invalid search query.</p>";
                     } elseif ($searchTerm !== '') {
-                        echo "<p class='error-msg'>No matching sample users found.</p>";
+                        echo "<p class='error-msg'>No matching user found.</p>";
                     } else {
-                        echo "<p class='error-msg'>Sample users are not available right now.</p>";
+                        echo "<p class='error-msg'>Enter a username or user ID to search.</p>";
                     }
                 } else {
-                    $leftColumnRows = array_slice($rows, 0, 3);
-                    $rightColumnRows = array_slice($rows, 3, 3);
-
-                    echo '<div class="sample-users-grid">';
-                    echo '<div class="sample-users-column">';
-                    foreach ($leftColumnRows as $row) {
+                    foreach ($rows as $row) {
                         $safeUsername = escape_output($row['username']);
                         $urlUsername = urlencode($row['username']);
                         $safeProfileHref = escape_attr("view_profile.php?username=" . $urlUsername);
@@ -135,24 +99,6 @@ unset($_SESSION['transfer_complete']);
                         echo '</div>';
                         echo '</a>';
                     }
-
-                    echo '</div>';
-                    echo '<div class="sample-users-column">';
-
-                    foreach ($rightColumnRows as $row) {
-                        $safeUsername = escape_output($row['username']);
-                        $urlUsername = urlencode($row['username']);
-                        $safeProfileHref = escape_attr("view_profile.php?username=" . $urlUsername);
-
-                        echo '<a href="' . $safeProfileHref . '" class="search-result-link">';
-                        echo '<div class="card search-result-card">';
-                        echo '<h3 class="text-cyan search-result-title">' . $safeUsername . '</h3>';
-                        echo '</div>';
-                        echo '</a>';
-                    }
-
-                    echo '</div>';
-                    echo '</div>';
                 }
                 ?>
             </div>
