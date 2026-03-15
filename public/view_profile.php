@@ -41,7 +41,7 @@ require_once __DIR__ . '/../includes/profile_view_logic.php';
                         <div class="profile-funds-box text-start mb-4">
                             <p class="profile-funds-label mb-2">Your balance</p>
                             <strong class="font-monospace profile-balance-large profile-balance-emphasis">
-                                ₹<?= $profileData['balance_rupees'] ?>
+                                ₹<?= escape_output($profileData['balance_rupees']) ?>
                             </strong>
                         </div>
 
