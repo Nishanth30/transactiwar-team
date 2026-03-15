@@ -70,8 +70,10 @@ services:
       setup:
         condition: service_completed_successfully
     ports:
-      - "${APP_BIND:-0.0.0.0}:80:80"
-      - "${APP_BIND:-0.0.0.0}:443:443"
+      # H6 FIX: Container listens on unprivileged ports (8080/8443) so
+      # the entire process runs as www-data. Docker maps host→container.
+      - "${APP_BIND:-0.0.0.0}:80:8080"
+      - "${APP_BIND:-0.0.0.0}:443:8443"
     environment:
       MYSQL_HOST: db
       MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in docker/.env}
@@ -89,10 +91,18 @@ services:
       TLS_CERT_CN: ${TLS_CERT_CN:-localhost}
       TLS_CERT_SAN: "${TLS_CERT_SAN:-DNS:localhost,IP:127.0.0.1,IP:::1}"
       TLS_SELF_SIGNED_DAYS: ${TLS_SELF_SIGNED_DAYS:-30}
+    # H7 FIX: Mount only the directories the application needs instead of
+    # the entire repo. The old "../:/var/www/html:ro" mount exposed .git/,
+    # scripts/debug/, reports/pentest/, and other sensitive paths inside the
+    # container. The certs mount is now read-only to prevent an attacker
+    # from overwriting TLS certificates after a container compromise.
     volumes:
-      - ../:/var/www/html:ro
-      - ./.env.example:/var/www/html/docker/.env:ro
+      - ../public:/var/www/html/public:ro
+      - ../includes:/var/www/html/includes:ro
+      - ../config:/var/www/html/config:ro
       - ../storage:/var/www/html/storage
+      # Writable so the entrypoint can generate self-signed certs on first
+      # run. For production: pre-provision certs and add :ro here.
       - ./certs:/etc/apache2/ssl
     networks:
       - backend
