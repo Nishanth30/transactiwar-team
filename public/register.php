@@ -15,7 +15,6 @@ require_once __DIR__ . '/../includes/sanitize.php';
 $error = '';
 $success = '';
 
-// Retrieve flash messages from the session if they exist
 if (isset($_SESSION['flash_error'])) {
     $error = $_SESSION['flash_error'];
     unset($_SESSION['flash_error']);
@@ -25,14 +24,12 @@ if (isset($_SESSION['flash_success'])) {
     unset($_SESSION['flash_success']);
 }
 
-// Prevent already-authenticated users from creating extra accounts accidentally.
 if (isset($_SESSION['user_id'])) {
     header('Location: /index.php');
     exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Registration mutates state; CSRF token is mandatory.
     verifyCsrf();
 
     $username = post_str('username');
@@ -55,7 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash_error = 'Passwords do not match.';
     } else {
         try {
-            // register_user() encapsulates DB uniqueness handling and password hashing.
             $result = register_user($pdo, $username, $email, $password);
 
             if ($result === true) {
@@ -78,7 +74,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['flash_success'] = $flash_success;
     }
 
-    // PRG Pattern: Redirect back to GET request to prevent form resubmission on reload
     header('Location: /register.php');
     exit;
 }
@@ -89,82 +84,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php render_page_head('Transactiwar | Register', csrfMeta()); ?>
 </head>
 <body>
-    <div class="container auth-container container-register">
-        <div class="card">
-            <h2 class="text-center text-glow">Register</h2>
+    <div class="tw-auth-wrap">
+        <div class="tw-auth-card tw-medium">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="text-center text-glow mb-4">Register</h2>
 
-            <?php if ($error !== ''): ?>
-                <div class="error-msg">
-                    <?= escape_output($error) ?>
+                    <?php if ($error !== ''): ?>
+                        <div class="alert alert-danger" role="alert">
+                            <?= escape_output($error) ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($success !== ''): ?>
+                        <div class="alert alert-success" role="alert">
+                            <?= escape_output($success) ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <form method="POST" action="/register.php">
+                        <?= csrfField() ?>
+
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username"
+                                   required minlength="<?= MIN_USERNAME_LEN ?>"
+                                   maxlength="<?= MAX_USERNAME_LEN ?>" autocomplete="username">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email"
+                                   required maxlength="<?= MAX_EMAIL_LEN ?>" autocomplete="email">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password"
+                                   required minlength="<?= MIN_PASSWORD_LEN ?>"
+                                   maxlength="<?= MAX_PASSWORD_LEN ?>" autocomplete="new-password">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label">Confirm Password</label>
+                            <input type="password" class="form-control" id="confirm_password"
+                                   name="confirm_password" required autocomplete="new-password">
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mt-2">Create Account</button>
+                    </form>
+
+                    <?php if ($error !== ''): ?>
+                    <div class="tw-rules mt-4">
+                        <h6>Account Requirements</h6>
+                        <div class="mb-2">
+                            <strong>Username</strong>
+                            <ul>
+                                <li><?= MIN_USERNAME_LEN ?>&ndash;<?= MAX_USERNAME_LEN ?> characters</li>
+                                <li>Only letters, numbers, underscores, and hyphens</li>
+                                <li>Cannot start or end with underscore or hyphen</li>
+                            </ul>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Email</strong>
+                            <ul>
+                                <li>Must be a valid email address (max <?= MAX_EMAIL_LEN ?> chars)</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <strong>Password</strong>
+                            <ul>
+                                <li><?= MIN_PASSWORD_LEN ?>&ndash;<?= MAX_PASSWORD_LEN ?> characters</li>
+                                <li>At least one uppercase letter (A&ndash;Z)</li>
+                                <li>At least one lowercase letter (a&ndash;z)</li>
+                                <li>At least one digit (0&ndash;9)</li>
+                                <li>At least one special character (!@#$%^&amp;* etc.)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="text-center mt-4">
+                        <a href="/login.php" class="text-muted">
+                            Already have an account? <span class="text-cyan">Login</span>
+                        </a>
+                    </div>
                 </div>
-            <?php endif; ?>
-
-            <?php if ($success !== ''): ?>
-                <div class="success-msg">
-                    <?= escape_output($success) ?>
-                </div>
-            <?php endif; ?>
-
-            <form method="POST" action="/register.php">
-                <?= csrfField() ?>
-
-                <div class="mt-2">
-                    <label>Username</label>
-                    <input type="text" name="username" required minlength="<?= MIN_USERNAME_LEN ?>" maxlength="<?= MAX_USERNAME_LEN ?>">
-                </div>
-
-                <div class="mt-2">
-                    <label>Email</label>
-                    <input type="email" name="email" required maxlength="<?= MAX_EMAIL_LEN ?>">
-                </div>
-
-                <div class="mt-2">
-                    <label>Password</label>
-                    <input type="password" name="password" required minlength="<?= MIN_PASSWORD_LEN ?>" maxlength="<?= MAX_PASSWORD_LEN ?>">
-                </div>
-
-                <div class="mt-2">
-                    <label>Confirm Password</label>
-                    <input type="password" name="confirm_password" required>
-                </div>
-
-                <button type="submit" class="btn-primary mt-4">Create Account</button>
-            </form>
-
-            <?php if ($error !== ''): ?>
-            <div class="rules-box mt-4">
-                <h4 class="rules-title">Account Requirements</h4>
-                <div class="rules-section">
-                    <strong>Username</strong>
-                    <ul>
-                        <li><?= MIN_USERNAME_LEN ?>–<?= MAX_USERNAME_LEN ?> characters</li>
-                        <li>Only letters, numbers, underscores, and hyphens</li>
-                        <li>Cannot start or end with underscore or hyphen</li>
-                        <li>No spaces allowed</li>
-                    </ul>
-                </div>
-                <div class="rules-section">
-                    <strong>Email</strong>
-                    <ul>
-                        <li>Must be a valid email address</li>
-                        <li>Maximum <?= MAX_EMAIL_LEN ?> characters</li>
-                    </ul>
-                </div>
-                <div class="rules-section">
-                    <strong>Password</strong>
-                    <ul>
-                        <li><?= MIN_PASSWORD_LEN ?>–<?= MAX_PASSWORD_LEN ?> characters</li>
-                        <li>At least one uppercase letter (A–Z)</li>
-                        <li>At least one lowercase letter (a–z)</li>
-                        <li>At least one digit (0–9)</li>
-                        <li>At least one special character (!@#$%^&* etc.)</li>
-                    </ul>
-                </div>
-            </div>
-            <?php endif; ?>
-
-            <div class="text-center mt-4">
-                <a href="/login.php" class="text-muted">Already have an account? <span class="text-cyan">Login</span></a>
             </div>
         </div>
     </div>

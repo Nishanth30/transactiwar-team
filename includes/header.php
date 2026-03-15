@@ -216,5 +216,6 @@ function render_page_head(string $title, string $extraHead = ''): void
     if ($extraHead !== '') {
         echo $extraHead . PHP_EOL;
     }
+    echo '<link rel="stylesheet" href="/assets/vendor/bootstrap/css/bootstrap.min.css">' . PHP_EOL;
     echo '<link rel="stylesheet" href="/assets/css/style.css">' . PHP_EOL;
 }

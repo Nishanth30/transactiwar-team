@@ -18,27 +18,25 @@ unset($_SESSION['transfer_complete']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <?php render_page_head('Transactiwar | Search Users'); ?>
 </head>
-
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container">
+    <div class="container py-4 tw-w-md">
         <div class="card">
-            <h2 class="text-glow">Search Users</h2>
+            <div class="card-body">
+                <h2 class="text-glow mb-4">Search Users</h2>
 
+                <form method="GET" action="/searchbox.php" class="d-flex gap-2 mb-2">
+                    <input type="text" class="form-control" name="q" id="searchbar"
+                           placeholder="Enter username or user ID&hellip;"
+                           aria-label="Search users">
+                    <button type="submit" class="btn btn-primary text-nowrap">Search</button>
+                </form>
+                <p class="form-text mb-4">Search by exact username or public user ID (UUID)</p>
 
-            <form method="GET" action="/searchbox.php" class="search-form">
-                <div class="search-input-wrapper">
-                    <input type="text" name="q" id="searchbar" placeholder="Enter username or user ID...">
-                </div>
-                <button type="submit" class="btn-primary btn-search">Search</button>
-            </form>
-            <p class="text-muted mt-2">Search by exact username or public user ID (UUID)</p>
-            <div class="results-container mt-4">
                 <?php
                 $query = sanitize_search(get_str('q'));
                 $searchTerm = trim($query);
@@ -48,10 +46,9 @@ unset($_SESSION['transfer_complete']);
                 }
 
                 if (!isset($pdo) || $pdo === null) {
-                    die("<p class='error-msg'>Database connection failed.</p>");
+                    die("<div class='alert alert-danger' role='alert'>Database connection failed.</div>");
                 }
 
-                // Determine if input is a UUID or a username
                 $isUuid = ($searchTerm !== '' && sanitize_uuid($searchTerm) !== null);
                 $searchLooksValid = true;
 
@@ -62,13 +59,11 @@ unset($_SESSION['transfer_complete']);
                 $rows = [];
                 if ($searchTerm !== '' && $searchLooksValid) {
                     if ($isUuid) {
-                        // Search by public user ID (UUID) — exact match
                         $stmt = $pdo->prepare(
                             "SELECT username FROM users WHERE public_id = :search_val LIMIT 1"
                         );
                         $stmt->execute([':search_val' => sanitize_uuid($searchTerm)]);
                     } else {
-                        // Search by username — exact match
                         $stmt = $pdo->prepare(
                             "SELECT username FROM users WHERE username = :search_val LIMIT 1"
                         );
@@ -81,11 +76,11 @@ unset($_SESSION['transfer_complete']);
 
                 if (count($rows) === 0) {
                     if ($searchTerm !== '' && !$searchLooksValid) {
-                        echo "<p class='error-msg'>Invalid search query.</p>";
+                        echo '<div class="alert alert-danger" role="alert">Invalid search query.</div>';
                     } elseif ($searchTerm !== '') {
-                        echo "<p class='error-msg'>No matching user found.</p>";
+                        echo '<div class="alert alert-danger" role="alert">No matching user found.</div>';
                     } else {
-                        echo "<p class='error-msg'>Enter a username or user ID to search.</p>";
+                        echo '<p class="text-muted text-center py-3">Enter a username or user ID to search.</p>';
                     }
                 } else {
                     foreach ($rows as $row) {
@@ -93,11 +88,11 @@ unset($_SESSION['transfer_complete']);
                         $urlUsername = urlencode($row['username']);
                         $safeProfileHref = escape_attr("view_profile.php?username=" . $urlUsername);
 
-                        echo '<a href="' . $safeProfileHref . '" class="search-result-link">';
-                        echo '<div class="card search-result-card">';
-                        echo '<h3 class="text-cyan search-result-title">' . $safeUsername . '</h3>';
-                        echo '</div>';
-                        echo '</a>';
+                        echo '<a href="' . $safeProfileHref . '" class="tw-search-result">';
+                        echo '<div class="card mb-2">';
+                        echo '<div class="card-body py-3 text-center">';
+                        echo '<h5 class="text-cyan mb-0">' . $safeUsername . '</h5>';
+                        echo '</div></div></a>';
                     }
                 }
                 ?>
@@ -105,7 +100,6 @@ unset($_SESSION['transfer_complete']);
         </div>
     </div>
 
-    <?php include __DIR__ . '/footer.html'; ?>
+    <?php include __DIR__ . '/footer.php'; ?>
 </body>
-
 </html>

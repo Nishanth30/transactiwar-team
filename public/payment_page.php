@@ -16,8 +16,6 @@ require_once __DIR__ . '/../includes/auth.php';
 require_login();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // If transfer_complete is set, this is a back-button resubmission
-    // with a stale CSRF token — redirect safely before verifyCsrf() fires
     if (isset($_SESSION['transfer_complete'])) {
         $_SESSION['transfer_error'] = "This transfer has already been processed.";
         $_SESSION['transfer_result'] = "fail";
@@ -29,7 +27,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// Receiver identity is always addressed via public UUID, never internal numeric ID.
 $targetUuid = sanitize_uuid(get_str('target_uuid'));
 if ($targetUuid === null) {
     logActivity(LOG_INVALID_INPUT);
@@ -37,16 +34,11 @@ if ($targetUuid === null) {
     exit;
 }
 
-
-// ── Fetch receiver from DB by UUID ───────────────────────────────
-// Username is NEVER taken from the URL — only from the DB row the
-// UUID resolves to. Spoofing &username=abc in the URL has no effect.
 $stmt = $pdo->prepare(
     "SELECT id, username FROM users WHERE public_id = ? LIMIT 1"
 );
 $stmt->execute([$targetUuid]);
 $receiver = $stmt->fetch(PDO::FETCH_ASSOC);
-
 
 if (!$receiver) {
     logActivity(LOG_INVALID_INPUT);
@@ -57,9 +49,8 @@ if (!$receiver) {
 $transferNonce = bin2hex(random_bytes(16));
 $_SESSION['transfer_nonce'] = $transferNonce;
 
-$receiverUsername = $receiver['username'];   // authoritative, from DB
+$receiverUsername = $receiver['username'];
 
-// ── Fetch sender balance ──────────────────────────────────────────
 $stmt = $pdo->prepare(
     "SELECT balance_paise FROM users WHERE id = ? LIMIT 1"
 );
@@ -78,42 +69,49 @@ logActivity(LOG_PAGE_VIEW);
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container">
-        <div class="card" style="padding: 1.5rem 2rem;">
-            <h2 class="text-glow text-center" style="margin-bottom: 0.5rem;">Transfer Funds</h2>
+    <div class="container py-4 tw-w-sm">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-glow text-center mb-4">Transfer Funds</h2>
 
-            <div class="card payment-target-card" style="margin-bottom: 1rem; padding: 1rem;">
-                <p class="text-muted payment-target-label">Target Agent</p>
-                <h3 class="text-cyan payment-target-name"><?= escape_output($receiverUsername) ?></h3>
-                <div class="profile-funds-box mt-2 w-100 text-center" style="padding: 0.75rem;">
-                    <p class="profile-funds-label mb-1">Your balance</p>
-                    <strong class="font-monospace profile-balance-large profile-balance-emphasis">
-                        ₹<?= escape_output($balanceRupees) ?>
-                    </strong>
+                <div class="card tw-target-card mb-4">
+                    <div class="card-body py-3">
+                        <p class="text-muted small mb-1">Recipient</p>
+                        <h4 class="text-cyan mb-3"><?= escape_output($receiverUsername) ?></h4>
+
+                        <div class="tw-balance-box w-100">
+                            <span class="tw-balance-label d-block mb-1">Your Balance</span>
+                            <span class="tw-balance-amount font-mono tw-balance-inline">
+                                &#8377;<?= escape_output($balanceRupees) ?>
+                            </span>
+                        </div>
+                    </div>
                 </div>
+
+                <form action="/payment_page.php" method="POST">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="transfer_nonce" value="<?= escape_attr($transferNonce) ?>">
+                    <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
+
+                    <div class="mb-3">
+                        <label for="amount" class="form-label">Amount (&#8377;)</label>
+                        <input type="number" class="form-control" id="amount" name="amount"
+                               min="1" step="0.01" placeholder="0.00" required>
+                        <div class="form-text">Minimum transfer: &#8377;1.00</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="remark" class="form-label">Remark (optional)</label>
+                        <input type="text" class="form-control" id="remark" name="remark"
+                               maxlength="500" placeholder="Add a note&hellip;">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100 mt-2">Authorize Transfer</button>
+                </form>
             </div>
-
-            <form action="/payment_page.php" method="POST">
-                <?= csrfField() ?>
-                <input type="hidden" name="transfer_nonce" value="<?= escape_attr($transferNonce) ?>">
-                <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
-
-                <div>
-                    <label style="margin-bottom: 2px;">Transfer Amount (₹)</label>
-                    <input type="number" name="amount" min="1" step="0.01" placeholder="0.00" required>
-                    <small class="text-muted payment-amount-hint">Minimum transfer: ₹1.00</small>
-                </div>
-
-                <div>
-                    <label style="margin-bottom: 2px;">Operational Remark (Optional)</label>
-                    <input type="text" name="remark" maxlength="500" placeholder="Enter secure note...">
-                </div>
-
-                <button type="submit" class="btn-primary mt-1 btn-block">Authorize Transfer</button>
-            </form>
         </div>
     </div>
 
-    <?php include __DIR__ . '/footer.html'; ?>
+    <?php include __DIR__ . '/footer.php'; ?>
 </body>
 </html>

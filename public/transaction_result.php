@@ -12,7 +12,6 @@ require_once __DIR__ . '/../includes/sanitize.php';
 
 require_login();
 
-// Result page must only be reachable via transfer flow state.
 if (!isset($_SESSION['transfer_result'])) {
     header('Location: ' . sanitize_header('/index.php'));
     exit;
@@ -20,7 +19,6 @@ if (!isset($_SESSION['transfer_result'])) {
 
 $result = $_SESSION['transfer_result'];
 $error = $_SESSION['transfer_error'] ?? null;
-// Flash semantics: read once, then clear.
 unset($_SESSION['transfer_result'], $_SESSION['transfer_error']);
 
 $isSuccess = ($result === 'successful');
@@ -33,22 +31,28 @@ $isSuccess = ($result === 'successful');
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container auth-container">
-        <div class="card text-center result-card">
-            <?php if ($isSuccess): ?>
-                <div class="result-icon-success">✅</div>
-                <h2 class="text-success text-glow">Transaction Successful</h2>
-                <p class="text-muted result-text">Your transfer has been completed securely.</p>
-            <?php else: ?>
-                <div class="result-icon-error">❌</div>
-                <h2 class="text-error text-glow">Transfer Failed</h2>
-                <p class="text-muted result-text"><?= escape_output($error ?? 'Transfer failed. Please try again.') ?></p>
-            <?php endif; ?>
+    <div class="tw-auth-wrap">
+        <div class="tw-auth-card tw-narrow">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <?php if ($isSuccess): ?>
+                        <div class="tw-result-icon tw-result-icon-ok" aria-hidden="true">&#10003;</div>
+                        <h2 class="text-glow mt-3 mb-2 tw-text-success-glow">Transfer Successful</h2>
+                        <p class="text-muted mb-4">Your transfer has been completed securely.</p>
+                    <?php else: ?>
+                        <div class="tw-result-icon tw-result-icon-err" aria-hidden="true">&#10007;</div>
+                        <h2 class="text-danger-glow mt-3 mb-2">Transfer Failed</h2>
+                        <p class="text-muted mb-4">
+                            <?= escape_output($error ?? 'Transfer failed. Please try again.') ?>
+                        </p>
+                    <?php endif; ?>
 
-            <a href="/transaction_history.php" class="btn-primary btn-ledger">View Ledger</a>
+                    <a href="/transaction_history.php" class="btn btn-primary px-4">View Ledger</a>
+                </div>
+            </div>
         </div>
     </div>
 
-    <?php include __DIR__ . '/footer.html'; ?>
+    <?php include __DIR__ . '/footer.php'; ?>
 </body>
 </html>

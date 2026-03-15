@@ -1,204 +1,176 @@
 /*
-   Dark Glassmorphism Theme (Adapted from style-c.css)
-   Mapped to original HTML class names for zero-HTML-breakage theme swap.
+   TransactiWar — Dark Glassmorphism Theme
+   Bootstrap 5.3 overrides + custom components.
+   Loaded AFTER bootstrap.min.css so all selectors win by cascade order.
 */
 
+/* ================================================================
+   1. DESIGN TOKENS
+   ================================================================ */
 :root {
-    --text: #ffffff;
-    --subtext: #cbd5e1;
-    --muted: #94a3b8;
-    --glass: rgba(255, 255, 255, 0.06);
-    --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-hover: rgba(255, 255, 255, 0.1);
-    --accent: #818CF8;
-    --green: #34D399;
-    --red: #F87171;
-    --radius: 16px;
+    --tw-text: #ffffff;
+    --tw-subtext: #cbd5e1;
+    --tw-muted: #94a3b8;
+    --tw-glass: rgba(255, 255, 255, 0.06);
+    --tw-glass-border: rgba(255, 255, 255, 0.12);
+    --tw-glass-hover: rgba(255, 255, 255, 0.10);
+    --tw-accent: #818CF8;
+    --tw-green: #34D399;
+    --tw-red: #F87171;
+    --tw-radius: 16px;
+    --tw-bg-dark: #030712;
 
-    /* Compatibility variables for legacy components */
-    --bg-dark: #030712;
-    --primary-cyan: var(--accent);
-    --primary-purple: #B026FF;
-    --text-white: var(--text);
-    --text-muted: var(--subtext);
-    --error: var(--red);
-    --success: var(--green);
+    /* Legacy aliases used in templates */
+    --accent: var(--tw-accent);
+    --green: var(--tw-green);
+    --red: var(--tw-red);
+    --error: var(--tw-red);
+    --success: var(--tw-green);
+    --glass: var(--tw-glass);
+    --glass-border: var(--tw-glass-border);
+    --glass-hover: var(--tw-glass-hover);
+    --muted: var(--tw-muted);
+    --radius: var(--tw-radius);
 }
 
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
+/* ================================================================
+   2. BASE RESETS & BODY
+   ================================================================ */
 body {
-    font-family: 'Inter', 'Segoe UI', sans-serif;
-    color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: var(--tw-text);
     min-height: 100vh;
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.6;
     background:
         radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.35) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.3) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.30) 0%, transparent 50%),
         radial-gradient(ellipse at 50% 50%, rgba(16, 24, 39, 1) 0%, #030712 100%);
     background-attachment: fixed;
     display: flex;
     flex-direction: column;
 }
 
-body::before {
-    content: '';
-    position: fixed;
-    top: -20%;
-    right: -10%;
-    width: 500px;
-    height: 500px;
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%);
-    border-radius: 50%;
-    pointer-events: none;
-    animation: drift 8s ease-in-out infinite alternate;
-    z-index: -1;
-}
-
+body::before,
 body::after {
     content: '';
     position: fixed;
-    bottom: -20%;
-    left: -10%;
-    width: 400px;
-    height: 400px;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, transparent 70%);
     border-radius: 50%;
     pointer-events: none;
-    animation: drift 10s ease-in-out infinite alternate-reverse;
     z-index: -1;
 }
 
+body::before {
+    top: -20%; right: -10%;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%);
+    animation: drift 8s ease-in-out infinite alternate;
+}
+
+body::after {
+    bottom: -20%; left: -10%;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, transparent 70%);
+    animation: drift 10s ease-in-out infinite alternate-reverse;
+}
+
 @keyframes drift {
-    from {
-        transform: translate(0, 0) scale(1);
-    }
-
-    to {
-        transform: translate(30px, -20px) scale(1.05);
-    }
+    from { transform: translate(0, 0) scale(1); }
+    to   { transform: translate(30px, -20px) scale(1.05); }
 }
 
-/* Typography */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-    color: var(--text);
+/* ================================================================
+   3. TYPOGRAPHY
+   ================================================================ */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--tw-text);
     letter-spacing: -0.5px;
-    margin-bottom: 1rem;
-}
-
-h2 {
-    font-size: 1.8rem;
 }
 
 .text-glow {
     text-shadow: 0 0 20px rgba(129, 140, 248, 0.4);
 }
 
-.text-center {
-    text-align: center;
-}
-
-.text-muted {
-    color: var(--muted);
-    margin-bottom: 5px;
-}
-
 .text-cyan {
-    color: var(--accent);
+    color: var(--tw-accent) !important;
 }
 
-/* Layout */
-.container {
-    width: 100%;
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 2rem;
-    position: relative;
-    z-index: 1;
+.text-danger-glow {
+    color: var(--tw-red) !important;
+    text-shadow: 0 0 20px rgba(248, 113, 113, 0.4);
 }
 
-/* Auth containers should not constrict larger tables or contents */
-.auth-container {
-    max-width: 1000px;
-    margin: 4rem auto;
-    width: 100%;
+a {
+    color: var(--tw-accent);
 }
 
-header,
-.app-nav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 2rem;
-    height: 50px;
-    background: rgba(255, 255, 255, 0.04);
+a:hover {
+    color: #a5b4fc;
+}
+
+/* ================================================================
+   4. NAVBAR (Bootstrap override)
+   ================================================================ */
+.tw-navbar {
+    background: rgba(255, 255, 255, 0.04) !important;
     backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--glass-border);
-    position: sticky;
-    top: 0;
-    z-index: 10;
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--tw-glass-border);
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    z-index: 1030;
 }
 
-header h2 a,
-.app-nav h2 a {
-    display: block;
-    /* allow vertical movement */
-    text-decoration: none;
-    color: #ffffff;
-    /* Bright white for better contrast */
-    text-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
-    position: relative;
-    top: 6px;
-    /* adjust this (4px–8px) to pull logo down */
+.tw-navbar .navbar-brand {
+    font-size: 1.25rem;
+    letter-spacing: 1px;
+    color: #fff !important;
 }
 
-.nav-links {
-    display: flex;
-    gap: 4px;
-}
-
-.nav-links a {
-    color: #ffffff;
-    /* Brightened text */
-    text-decoration: none;
-    font-size: 14px;
-    /* Slightly larger text */
+.tw-navbar .nav-link {
+    color: rgba(255, 255, 255, 0.85) !important;
     font-weight: 500;
-    padding: 8px 16px;
-    border-radius: 10px;
-    transition: all 0.2s;
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-    /* Subtle glow for readability */
+    font-size: 13px;
+    border-radius: 8px;
+    padding: 0.4rem 0.85rem !important;
+    transition: background 0.2s, color 0.2s;
 }
 
-.nav-links a.active,
-.nav-links a:hover {
-    background: var(--glass-hover);
-    color: #ffffff;
-    text-shadow: 0 0 15px rgba(255, 255, 255, 0.6);
+.tw-navbar .nav-link:hover,
+.tw-navbar .nav-link:focus {
+    background: var(--tw-glass-hover);
+    color: #fff !important;
 }
 
-/* Cards (Glass Components) */
+.tw-navbar .nav-link.text-danger-subtle {
+    color: rgba(248, 113, 113, 0.85) !important;
+}
+
+.tw-navbar .nav-link.text-danger-subtle:hover {
+    color: #fff !important;
+    background: rgba(248, 113, 113, 0.2);
+}
+
+.tw-navbar .navbar-toggler {
+    color: rgba(255,255,255,0.7);
+}
+
+.tw-navbar .navbar-toggler:focus {
+    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25);
+}
+
+/* ================================================================
+   5. CARDS (Bootstrap .card override)
+   ================================================================ */
 .card {
-    background: var(--glass);
+    background: var(--tw-glass);
     backdrop-filter: blur(24px);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius);
-    padding: 2rem;
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--tw-glass-border);
+    border-radius: var(--tw-radius);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    color: var(--tw-text);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .card:hover {
@@ -206,654 +178,485 @@ header h2 a,
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
 }
 
-/* Forms */
-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+.card-body { padding: 2rem; }
+.card-header {
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--tw-glass-border);
+    color: var(--tw-accent);
+    font-weight: 600;
 }
 
-label {
-    font-size: 12px;
-    color: var(--subtext);
-    display: block;
-    margin-bottom: 6px;
-    font-weight: 500;
+/* Force glass on nested cards / dark utilities */
+.card.bg-dark {
+    background: var(--tw-glass) !important;
 }
 
-input[type="text"],
-input[type="email"],
-input[type="password"],
-input[type="number"],
-select,
-textarea {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--glass-border);
+/* ================================================================
+   6. FORMS (Bootstrap override)
+   ================================================================ */
+.form-control,
+.form-select {
+    background: rgba(0, 0, 0, 0.25) !important;
+    border: 1px solid var(--tw-glass-border) !important;
     border-radius: 10px;
-    color: var(--text);
-    font-family: inherit;
+    color: var(--tw-text) !important;
     font-size: 14px;
-    padding: 10px 14px;
-    outline: none;
+    padding: 0.6rem 0.85rem;
     backdrop-filter: blur(10px);
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-/* Hide number input spin buttons */
+.form-control:focus,
+.form-select:focus {
+    background: rgba(0, 0, 0, 0.30) !important;
+    border-color: rgba(129, 140, 248, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.12) !important;
+    color: var(--tw-text) !important;
+}
+
+.form-control::placeholder {
+    color: var(--tw-muted);
+    opacity: 0.7;
+}
+
+.form-label {
+    font-size: 12px;
+    color: var(--tw-subtext);
+    font-weight: 500;
+    margin-bottom: 0.35rem;
+    letter-spacing: 0.02em;
+}
+
+.form-text {
+    color: var(--tw-muted) !important;
+    font-size: 12px;
+}
+
+textarea.form-control {
+    min-height: 80px;
+    resize: vertical;
+}
+
+/* File input */
+input[type="file"].form-control {
+    padding: 0.35rem 0.85rem;
+}
+
+input[type="file"].form-control::file-selector-button {
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.8), rgba(16, 185, 129, 0.8));
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 0.4rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-right: 0.75rem;
+    transition: all 0.2s;
+}
+
+input[type="file"].form-control::file-selector-button:hover {
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.95), rgba(5, 150, 105, 0.95));
+    box-shadow: 0 4px 15px rgba(52, 211, 153, 0.3);
+}
+
+/* Hide number input spinners */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
 }
-
 input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
 }
 
-input:focus,
-select:focus,
-textarea:focus {
-    border-color: rgba(129, 140, 248, 0.5);
-    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.1);
-}
-
-/* File Input Customization */
-input[type="file"]::file-selector-button {
-    background: linear-gradient(135deg, rgba(52, 211, 153, 0.8), rgba(16, 185, 129, 0.8));
-    border: 1px solid rgba(52, 211, 153, 0.3);
-    color: #fff;
-    font-family: inherit;
-    font-size: 13px;
+/* ================================================================
+   7. BUTTONS (Bootstrap override)
+   ================================================================ */
+.btn-primary {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.85), rgba(139, 92, 246, 0.85)) !important;
+    border: 1px solid rgba(129, 140, 248, 0.3) !important;
+    color: #fff !important;
     font-weight: 600;
-    padding: 8px 16px;
-    border-radius: 8px;
-    cursor: pointer;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 15px rgba(52, 211, 153, 0.25);
-    transition: all 0.2s;
-    margin-right: 12px;
-}
-
-input[type="file"]::file-selector-button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(52, 211, 153, 0.4);
-    background: linear-gradient(135deg, rgba(52, 211, 153, 0.9), rgba(5, 150, 105, 0.9));
-}
-
-/* Buttons */
-.btn-primary,
-button[type="submit"],
-.btn {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.8), rgba(139, 92, 246, 0.8));
-    border: 1px solid rgba(129, 140, 248, 0.3);
-    color: #fff;
-    font-family: inherit;
     font-size: 13px;
-    font-weight: 600;
-    padding: 11px 20px;
+    padding: 0.6rem 1.25rem;
     border-radius: 10px;
-    cursor: pointer;
-    backdrop-filter: blur(10px);
     box-shadow: 0 4px 15px rgba(99, 102, 241, 0.25);
     transition: all 0.2s;
-    text-decoration: none;
-    /* Strip underlines for `a` tags acting as buttons */
-    display: inline-block;
-    /* Ensure `a` tags respect padding */
-    text-align: center;
-    margin: 5px 0px;
 }
 
 .btn-primary:hover,
-button[type="submit"]:hover,
-.btn:hover {
-    transform: translateY(-1px);
+.btn-primary:focus {
+    background: linear-gradient(135deg, rgba(129, 140, 248, 0.95), rgba(167, 139, 250, 0.95)) !important;
     box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
-    background: linear-gradient(135deg, rgba(129, 140, 248, 0.9), rgba(167, 139, 250, 0.9));
-    color: #fff;
-    text-decoration: none;
+    transform: translateY(-1px);
+    color: #fff !important;
 }
 
-.btn-sm {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
+.btn-primary:active {
+    transform: translateY(0);
 }
 
-/* Error Messages */
-/* Alerts */
-.error-msg,
-.alert-danger {
-    background: rgba(248, 113, 113, 0.1);
-    color: var(--red);
-    padding: 10px 14px;
+.btn-outline-secondary {
+    color: var(--tw-subtext) !important;
+    border-color: var(--tw-glass-border) !important;
+    background: transparent !important;
+}
+
+.btn-outline-secondary:hover {
+    background: var(--tw-glass-hover) !important;
+    color: #fff !important;
+    border-color: rgba(255,255,255,0.2) !important;
+}
+
+.btn-outline-danger {
+    color: var(--tw-red) !important;
+    border-color: rgba(248, 113, 113, 0.3) !important;
+    background: rgba(248, 113, 113, 0.08) !important;
+}
+
+.btn-outline-danger:hover {
+    background: rgba(248, 113, 113, 0.2) !important;
+    color: #fff !important;
+    border-color: rgba(248, 113, 113, 0.5) !important;
+}
+
+/* ================================================================
+   8. ALERTS (Bootstrap override)
+   ================================================================ */
+.alert-danger,
+.error-msg {
+    background: rgba(248, 113, 113, 0.1) !important;
+    color: var(--tw-red) !important;
+    border: 1px solid rgba(248, 113, 113, 0.2) !important;
     border-radius: 10px;
-    border: 1px solid rgba(248, 113, 113, 0.2);
     font-size: 13px;
-    margin-bottom: 1rem;
 }
 
-.success-msg,
-.alert-success {
-    background: rgba(52, 211, 153, 0.1);
-    color: var(--green);
-    padding: 10px 14px;
+.alert-success,
+.success-msg {
+    background: rgba(52, 211, 153, 0.1) !important;
+    color: var(--tw-green) !important;
+    border: 1px solid rgba(52, 211, 153, 0.2) !important;
     border-radius: 10px;
-    border: 1px solid rgba(52, 211, 153, 0.2);
     font-size: 13px;
-    margin-bottom: 1rem;
 }
 
-.alert {
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: 1.5rem;
+/* ================================================================
+   9. TABLES (Bootstrap override)
+   ================================================================ */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--tw-text);
+    --bs-table-border-color: var(--tw-glass-border);
+    color: var(--tw-text);
 }
 
-/* Force override for bg-dark/border utility classes on glass elements */
-.card.bg-dark,
-.card.bg-secondary {
-    background: var(--glass) !important;
+.table > thead {
+    background: rgba(255, 255, 255, 0.03);
 }
 
-.card.border-secondary,
-.card.border-info {
-    border-color: var(--glass-border) !important;
+.table > thead th {
+    color: var(--tw-accent);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+    border-bottom-width: 1px;
+    padding: 0.85rem 1rem;
+    white-space: nowrap;
 }
 
-.form-control.bg-dark {
-    background: rgba(0, 0, 0, 0.2) !important;
-    color: var(--text) !important;
-    border-color: var(--glass-border) !important;
-    backdrop-filter: blur(10px) !important;
+.table > tbody td {
+    padding: 0.85rem 1rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--tw-glass-border);
 }
 
-/* Profile Specifics */
-.avatar-lg {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #4338CA, #7C3AED);
+.table > tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.table-responsive {
+    border: 1px solid var(--tw-glass-border);
+    border-radius: var(--tw-radius);
+    background: var(--tw-glass);
+}
+
+/* ================================================================
+   10. AUTH CONTAINERS (login, register, password)
+   ================================================================ */
+.tw-auth-wrap {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 30px;
-    font-weight: 700;
-    border: 2px solid rgba(255, 255, 255, 0.15);
-    flex-shrink: 0;
-    box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+    flex: 1;
+    padding: 2rem 1rem;
 }
 
-.avatar-glow {
-    border: 3px solid var(--accent);
+.tw-auth-card {
+    width: 100%;
+}
+
+.tw-auth-card.tw-narrow { max-width: 440px; }
+.tw-auth-card.tw-medium { max-width: 500px; }
+.tw-auth-card.tw-wide   { max-width: 540px; }
+.tw-auth-card.tw-tiny   { max-width: 400px; }
+
+/* ================================================================
+   11. PROFILE COMPONENTS
+   ================================================================ */
+.tw-avatar {
+    border: 3px solid var(--tw-accent);
     box-shadow: 0 0 20px rgba(129, 140, 248, 0.3);
-    transition: all 0.3s ease;
     object-fit: cover;
+    transition: box-shadow 0.3s;
 }
 
-.pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: rgba(129, 140, 248, 0.15);
-    color: #A5B4FC;
-    border: 1px solid rgba(129, 140, 248, 0.25);
-    border-radius: 20px;
-    padding: 3px 12px;
-    font-size: 11px;
-    font-weight: 600;
+.tw-avatar:hover {
+    box-shadow: 0 0 30px rgba(129, 140, 248, 0.5);
 }
 
-/* Utilities */
-.mt-1 {
-    margin-top: 0.5rem;
-}
-
-.mt-2 {
-    margin-top: 1rem;
-}
-
-.mt-3 {
-    margin-top: 1.5rem;
-}
-
-.mt-4 {
-    margin-top: 0rem;
-}
-
-.w-100 {
-    width: 100%;
-}
-
-.table-container {
-    overflow-x: auto;
-    border-radius: var(--radius);
-    border: 1px solid var(--glass-border);
-    background: var(--glass);
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-th,
-td {
-    padding: 1rem 1.25rem;
-    text-align: left;
-    border-bottom: 1px solid var(--glass-border);
-}
-
-th {
-    background: rgba(255, 255, 255, 0.02);
-    color: var(--accent);
-    font-size: 0.9rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-/* Rules / Requirements Box */
-.rules-box {
-    background: rgba(0, 0, 0, 0.15);
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    padding: 1.25rem 1.5rem;
-    font-size: 12px;
-    color: var(--subtext);
-}
-
-.rules-title {
-    font-size: 13px;
-    color: var(--accent);
-    margin-bottom: 0.75rem;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-}
-
-.rules-section {
-    margin-bottom: 0.75rem;
-}
-
-.rules-section:last-child {
-    margin-bottom: 0;
-}
-
-.rules-section strong {
-    color: var(--text);
-    font-size: 12px;
-    display: block;
-    margin-bottom: 4px;
-}
-
-.rules-section ul {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-}
-
-.rules-section ul li {
-    padding: 2px 0 2px 16px;
-    position: relative;
-    line-height: 1.6;
-}
-
-.rules-section ul li::before {
-    content: '-';
-    position: absolute;
-    left: 4px;
-    color: var(--accent);
-    font-weight: bold;
-}
-
-/* =========================================================
-   EXTRACTED INLINE STYLES (CSP COMPLIANCE)
-   ========================================================= */
-
-/* Header */
-.header-logo-link {
-    color: inherit;
-    text-decoration: none;
-    align-self: flex-end;
-    padding-bottom: 0px;
-}
-
-/* Container Modifiers */
-.container-login {
-    max-width: 450px !important;
-}
-
-.container-register {
-    max-width: 500px !important;
-}
-
-.container-profile {
-    max-width: 1000px !important;
-    margin: 2rem auto !important;
-}
-
-.container-password {
-    max-width: 500px !important;
-}
-
-.container-confirm {
-    max-width: 400px !important;
-}
-
-/* View Profile */
-.profile-bio-box {
-    max-width: 600px;
-}
-
-.profile-bio-text {
-    line-height: 1.6;
-}
-
-.profile-balance-box {
-    max-width: 600px;
-    border-left-width: 4px;
-}
-
-/* NEW: stronger balance emphasis on own profile */
-.profile-funds-box {
+.tw-balance-box {
     display: inline-block;
     padding: 1.25rem 1.5rem;
-    border-radius: 16px;
+    border-radius: var(--tw-radius);
     background: rgba(52, 211, 153, 0.08);
     border: 1px solid rgba(52, 211, 153, 0.22);
-    box-shadow:
-        0 0 0 1px rgba(52, 211, 153, 0.08) inset,
-        0 10px 30px rgba(52, 211, 153, 0.08);
+    box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.08) inset,
+                0 10px 30px rgba(52, 211, 153, 0.08);
 }
 
-.profile-funds-label {
+.tw-balance-label {
     color: #A7F3D0;
-    font-size: 0.95rem;
-    letter-spacing: 0.04em;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     font-weight: 600;
 }
 
-.profile-balance-large {
-    display: inline-block;
+.tw-balance-amount {
+    display: block;
     font-size: clamp(1.8rem, 4vw, 2.8rem);
-    line-height: 1;
+    line-height: 1.1;
     font-weight: 800;
     letter-spacing: -0.03em;
+    color: var(--tw-green);
+    text-shadow: 0 0 10px rgba(52, 211, 153, 0.45),
+                 0 0 24px rgba(52, 211, 153, 0.22);
 }
 
-.profile-balance-emphasis {
-    color: var(--green);
-    text-shadow:
-        0 0 10px rgba(52, 211, 153, 0.45),
-        0 0 24px rgba(52, 211, 153, 0.22);
+.tw-bio-card {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--tw-glass-border);
 }
 
-/* Confirm Logout & Transaction Result Cards */
-.logout-card,
-.result-card {
-    padding: 3rem 2rem;
+/* Profile grid (own profile: two-column) */
+.tw-profile-grid {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 3rem;
+    align-items: start;
 }
 
-.logout-icon {
-    font-size: 4rem;
-    text-shadow: 0 0 20px rgba(248, 113, 113, 0.8);
-    margin-bottom: 1rem;
+@media (max-width: 768px) {
+    .tw-profile-grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
 }
 
-.result-icon-success {
-    font-size: 4rem;
-    text-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
-    margin-bottom: 1rem;
-}
-
-.result-icon-error {
-    font-size: 4rem;
-    text-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
-    margin-bottom: 1rem;
-}
-
-.logout-text,
-.result-text {
-    font-size: 1.1rem;
-    margin-bottom: 2rem;
-}
-
-.text-danger-glow {
-    color: #F87171;
-}
-
-.logout-actions {
-    display: flex;
-    gap: 1rem;
-    width: 100%;
-}
-
-.btn-stay {
-    flex: 1;
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text);
-    border: 1px solid var(--glass-border);
-    text-align: center;
-}
-
-.btn-leave {
-    flex: 1;
-    background: rgba(248, 113, 113, 0.2);
-    color: #F87171;
-    border: 1px solid rgba(248, 113, 113, 0.3);
-    text-align: center;
-}
-
-.btn-ledger {
-    display: inline-block;
-    font-size: 1rem;
-    padding: 0.8rem 2rem;
-}
-
-/* Payment Page */
-.payment-target-card {
+/* ================================================================
+   12. PAYMENT PAGE
+   ================================================================ */
+.tw-target-card {
     background: rgba(0, 0, 0, 0.3);
     border: none;
-    margin-bottom: 2rem;
     text-align: center;
-    padding: 1.5rem;
 }
 
-.payment-target-label {
-    margin: 0;
-    font-size: 0.9rem;
-}
-
-.payment-target-name {
-    margin: 0.5rem 0 1.5rem 0;
-}
-
-.payment-balance-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.payment-balance-label {
-    font-size: 0.9rem;
-}
-
-.payment-amount-hint {
+/* ================================================================
+   13. SEARCH RESULTS
+   ================================================================ */
+.tw-search-result {
+    text-decoration: none;
     display: block;
-    margin-top: 2px;
-    margin-bottom: 0;
 }
 
-.btn-block {
-    width: 100%;
-}
-
-/* Transaction History */
-.empty-ledger {
+.tw-search-result .card {
+    padding: 1.25rem;
     text-align: center;
-    padding: 2rem;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.tw-search-result:hover .card {
+    transform: translateY(-2px);
+    border-color: rgba(129, 140, 248, 0.4);
+}
+
+.tw-search-result h5 {
+    margin: 0;
+    color: var(--tw-accent);
+}
+
+/* ================================================================
+   14. TRANSACTION TABLE SPECIFICS
+   ================================================================ */
+.tx-dir-sent     { color: var(--tw-red) !important; }
+.tx-dir-received { color: var(--tw-green) !important; }
+
+.tx-dir-badge {
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}
+
+.tx-counterparty {
+    color: #58a6ff;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.tx-counterparty:hover {
+    text-decoration: underline;
+    color: #79c0ff;
+}
+
+.tx-id {
+    font-size: 0.8rem;
+    color: var(--tw-muted);
 }
 
 .font-mono {
     font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
-.tx-table-id {
-    font-size: 0.8rem;
+/* ================================================================
+   15. RESULT & CONFIRMATION PAGES
+   ================================================================ */
+.tw-result-icon {
+    font-size: 4rem;
+    line-height: 1;
+    margin-bottom: 0.5rem;
 }
 
-.tx-table-dir {
+.tw-result-icon-ok {
+    text-shadow: 0 0 24px rgba(16, 185, 129, 0.8);
+}
+
+.tw-result-icon-err {
+    text-shadow: 0 0 24px rgba(239, 68, 68, 0.8);
+}
+
+/* ================================================================
+   16. RULES / REQUIREMENTS BOX
+   ================================================================ */
+.tw-rules {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--tw-glass-border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    font-size: 12px;
+    color: var(--tw-subtext);
+}
+
+.tw-rules h6 {
+    font-size: 13px;
+    color: var(--tw-accent);
+    letter-spacing: 0.5px;
     text-transform: uppercase;
-    font-size: 0.8rem;
-    font-weight: bold;
-    letter-spacing: 1px;
 }
 
-.tx-table-dir-sent {
-    color: var(--error);
+.tw-rules strong {
+    color: var(--tw-text);
+    font-size: 12px;
 }
 
-.tx-table-dir-received {
-    color: var(--success);
+.tw-rules ul {
+    list-style: none;
+    padding-left: 0;
+    margin-bottom: 0.5rem;
 }
 
-.tx-counterparty-link {
-    color: #58a6ff;
-    font-weight: bold;
-    text-decoration: none;
-    display: inline-block;
+.tw-rules ul li {
+    padding: 2px 0 2px 16px;
+    position: relative;
+    line-height: 1.7;
 }
 
-.tx-counterparty-link:hover {
-    text-decoration: underline;
-    color: #79c0ff;
-}
-
-.tx-table-amt {
+.tw-rules ul li::before {
+    content: '\2013';
+    position: absolute;
+    left: 2px;
+    color: var(--tw-accent);
     font-weight: bold;
 }
 
-.pagination-controls {
+/* ================================================================
+   17. FOOTER
+   ================================================================ */
+.tw-footer {
+    background: rgba(255, 255, 255, 0.02);
+    border-top: 1px solid var(--tw-glass-border);
+    color: var(--tw-muted);
+    font-size: 12px;
+}
+
+/* ================================================================
+   18. UTILITY OVERRIDES
+   ================================================================ */
+
+/* Bootstrap text-muted override for dark theme */
+.text-muted {
+    color: var(--tw-muted) !important;
+}
+
+/* Fix mt-4 (was incorrectly 0rem) */
+.mt-4 { margin-top: 1.5rem !important; }
+
+/* Divider line */
+.tw-divider {
+    border-top: 1px solid var(--tw-glass-border);
+}
+
+/* Pagination controls */
+.tw-pagination {
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
 
-.ml-2 {
-    margin-left: 0.5rem;
+/* Accessibility: focus-visible for keyboard nav */
+:focus-visible {
+    outline: 2px solid var(--tw-accent);
+    outline-offset: 2px;
 }
 
-/* Searchbox */
-.search-form {
-    flex-direction: row;
-    align-items: flex-end;
-    gap: 0.75rem;
-    margin-bottom: 1.25rem;
-}
+/* ================================================================
+   19. PAGE-WIDTH MODIFIERS
+   ================================================================ */
+.tw-w-sm  { max-width: 540px; }
+.tw-w-md  { max-width: 640px; }
+.tw-w-lg  { max-width: 720px; }
+.tw-w-xl  { max-width: 900px; }
+.tw-w-full { max-width: 1000px; }
+.tw-lh-relaxed { line-height: 1.7; }
+.tw-balance-inline { font-size: 1.6rem; }
+.tw-text-success-glow { color: var(--tw-green) !important; }
 
-.search-input-wrapper {
-    flex: 1;
-    margin: 10px 0;
-}
+/* ================================================================
+   20. RESPONSIVE FINE-TUNING
+   ================================================================ */
+@media (max-width: 576px) {
+    .card-body { padding: 1.25rem; }
 
-.btn-search {
-    margin: 10px 0;
-}
-
-.search-form+.results-container {
-    margin-top: 0 !important;
-}
-
-.search-result-link {
-    text-decoration: none;
-    display: block;
-}
-
-.search-result-card {
-    padding: 1.5rem;
-    text-align: center;
-    transition: all 0.3s ease;
-}
-
-.sample-users-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-}
-
-.sample-users-column {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.sample-users-column .search-result-link {
-    width: 100%;
-}
-
-.search-result-title {
-    margin: 0;
-}
-
-.search-result-id {
-    margin-top: 0.5rem;
-    font-size: 0.8rem;
-}
-
-/* Debuggers */
-.debug-headers-pre {
-    background: #1a1a1a;
-    color: #00ff00;
-    padding: 20px;
-}
-
-.profile-main-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 5rem;
-    align-items: start;
-}
-
-.profile-left-column {
-    min-width: 0;
-}
-
-.profile-right-column {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-start;
-    padding-top: 0.25rem;
-}
-
-.profile-bio-box {
-    max-width: 100%;
-    margin: 1rem 0 1.5rem 0;
-}
-
-.account-security-panel {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--glass-border);
-}
-
-.account-security-panel .btn {
-    margin: 0;
-}
-
-@media (max-width: 900px) {
-    .profile-main-grid {
-        grid-template-columns: 1fr;
+    .tw-balance-amount {
+        font-size: 1.8rem;
     }
 
-    .profile-right-column {
-        align-items: flex-start;
-    }
-
-    .sample-users-grid {
-        grid-template-columns: 1fr;
+    .tw-navbar .navbar-brand {
+        font-size: 1rem;
     }
 }

@@ -20,7 +20,6 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
-// Pagination is server-side to keep memory predictable for large ledgers.
 $uid = (int) $_SESSION['user_id'];
 $perPage = 20;
 $rawPage = get_int('page');
@@ -28,7 +27,6 @@ $page = ($rawPage !== null && $rawPage > 0) ? $rawPage : 1;
 $offset = ($page - 1) * $perPage;
 
 try {
-    // Count + page query are separated so UI can render total pages cleanly.
     $countStmt = $pdo->prepare(
         'SELECT COUNT(*) FROM transactions WHERE sender_id = :uid OR receiver_id = :uid'
     );
@@ -59,7 +57,6 @@ try {
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
-    // Keep UI generic; detailed diagnostics stay in server logs.
     logSecurityEvent(LOG_INVALID_INPUT, 'history_db:' . get_class($e));
     $rows = [];
     $total = 0;
@@ -77,83 +74,93 @@ logActivity(LOG_PAGE_VIEW . ':transaction_history');
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container">
+    <div class="container py-4">
         <div class="card">
-            <h2 class="text-glow">Transaction Ledger</h2>
+            <div class="card-body">
+                <h2 class="text-glow mb-4">Transaction History</h2>
 
-            <?php if (!empty($dbError)): ?>
-                <div class="error-msg">Error loading transactions. Please try again.</div>
-            <?php elseif (empty($rows)): ?>
-                <div class="text-muted empty-ledger">No operational transactions found.</div>
-            <?php else: ?>
-                <p class="text-muted">Showing <?= count($rows) ?> of <?= $total ?> transactions.</p>
+                <?php if (!empty($dbError)): ?>
+                    <div class="alert alert-danger" role="alert">
+                        Error loading transactions. Please try again.
+                    </div>
+                <?php elseif (empty($rows)): ?>
+                    <p class="text-muted text-center py-4">No transactions yet.</p>
+                <?php else: ?>
+                    <p class="text-muted small mb-3">
+                        Showing <?= count($rows) ?> of <?= $total ?> transactions
+                    </p>
 
-                <div class="table-container mt-2">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Direction</th>
-                                <th>Counterparty</th>
-                                <th>Amount (₹)</th>
-                                <th>Remark</th>
-                                <th>Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($rows as $tx):
-                                $safeUuid = sanitize_uuid($tx['counterparty_id']);
-                                $profileHref = $safeUuid !== null
-                                    ? escape_attr('/view_profile.php?id=' . $safeUuid)
-                                    : '#';
-                                $dirColor = $tx['direction'] === 'sent' ? 'var(--error)' : 'var(--success)';
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Type</th>
+                                    <th>Counterparty</th>
+                                    <th>Amount</th>
+                                    <th>Remark</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($rows as $tx):
+                                    $safeUuid = sanitize_uuid($tx['counterparty_id']);
+                                    $profileHref = $safeUuid !== null
+                                        ? escape_attr('/view_profile.php?id=' . $safeUuid)
+                                        : '#';
+                                    $isSent = $tx['direction'] === 'sent';
                                 ?>
                                 <tr>
-                                    <td class="text-muted tx-table-id font-mono">
-                                        <?= escape_output($tx['id']) ?>
-                                    </td>
-                                    <td class="tx-table-dir <?= $tx['direction'] === 'sent' ? 'tx-table-dir-sent' : 'tx-table-dir-received' ?>">
-                                        <?= escape_output($tx['direction']) ?>
+                                    <td class="tx-id font-mono"><?= escape_output($tx['id']) ?></td>
+                                    <td>
+                                        <span class="tx-dir-badge <?= $isSent ? 'tx-dir-sent' : 'tx-dir-received' ?>">
+                                            <?= escape_output($tx['direction']) ?>
+                                        </span>
                                     </td>
                                     <td>
-                                        <a href="<?= $profileHref ?>" class="tx-counterparty-link">
+                                        <a href="<?= $profileHref ?>" class="tx-counterparty">
                                             <?= escape_output($tx['counterparty_username']) ?>
                                         </a>
                                         <br>
-                                        <small class="text-muted font-mono" style="font-size: 0.75rem;">
+                                        <small class="text-muted font-mono">
                                             <?= escape_output($tx['counterparty_id']) ?>
                                         </small>
                                     </td>
-                                    <td class="font-mono tx-table-amt">
-                                        ₹<?= escape_output(number_format((int) $tx['amount_paise'] / 100, 2)) ?>
+                                    <td class="font-mono fw-bold text-nowrap">
+                                        &#8377;<?= escape_output(number_format((int) $tx['amount_paise'] / 100, 2)) ?>
                                     </td>
                                     <td class="text-muted">
-                                        <?= $tx['receiver_comment'] !== null ? escape_output($tx['receiver_comment']) : '—' ?>
+                                        <?= $tx['receiver_comment'] !== null ? escape_output($tx['receiver_comment']) : '&mdash;' ?>
                                     </td>
-                                    <td class="text-muted tx-table-date">
+                                    <td class="text-muted text-nowrap">
                                         <?= escape_output($tx['created_at']) ?>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="mt-4 pagination-controls">
-                    <span class="text-muted">Page <?= (int) $page ?> of <?= (int) $totalPages ?></span>
-                    <div>
-                        <?php if ($page > 1): ?>
-                            <a href="<?= escape_attr('/transaction_history.php?page=' . ($page - 1)) ?>" class="btn btn-sm">← Previous</a>
-                        <?php endif; ?>
-                        <?php if ($page < $totalPages): ?>
-                            <a href="<?= escape_attr('/transaction_history.php?page=' . ($page + 1)) ?>" class="btn btn-sm ml-2">Next →</a>
-                        <?php endif; ?>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
-            <?php endif; ?>
+
+                    <div class="tw-pagination mt-4">
+                        <span class="text-muted small">
+                            Page <?= (int) $page ?> of <?= (int) $totalPages ?>
+                        </span>
+                        <div class="d-flex gap-2">
+                            <?php if ($page > 1): ?>
+                                <a href="<?= escape_attr('/transaction_history.php?page=' . ($page - 1)) ?>"
+                                   class="btn btn-outline-secondary btn-sm">&larr; Prev</a>
+                            <?php endif; ?>
+                            <?php if ($page < $totalPages): ?>
+                                <a href="<?= escape_attr('/transaction_history.php?page=' . ($page + 1)) ?>"
+                                   class="btn btn-outline-secondary btn-sm">Next &rarr;</a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 
-    <?php include __DIR__ . '/footer.html'; ?>
+    <?php include __DIR__ . '/footer.php'; ?>
 </body>
 </html>

@@ -20,70 +20,67 @@ if (isset($_SESSION['flash_error']) && is_string($_SESSION['flash_error'])) {
 ?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <?php render_page_head('Transactiwar | Edit Profile'); ?>
 </head>
-
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container mt-5">
-        <div class="card p-3 shadow-lg">
-            <h2 class="text-glow mb-2">Update Operational Profile</h2>
+    <div class="container py-4 tw-w-lg">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-glow mb-4">Edit Profile</h2>
 
-            <?php if ($flash_success_message !== ''): ?>
-                <div class="alert alert-success">
-                    <?= escape_output($flash_success_message) ?> <a href="/view_profile.php" class="text-cyan fw-bold">View
-                        Profile</a>
-                </div>
-            <?php endif; ?>
+                <?php if ($flash_success_message !== ''): ?>
+                    <div class="alert alert-success" role="alert">
+                        <?= escape_output($flash_success_message) ?>
+                        <a href="/view_profile.php" class="text-cyan fw-bold ms-1">View Profile</a>
+                    </div>
+                <?php endif; ?>
 
-            <?php if ($error_message): ?>
-                <div class="alert alert-danger">
-                    <?= escape_output($error_message) ?>
-                </div>
-            <?php endif; ?>
+                <?php if ($error_message): ?>
+                    <div class="alert alert-danger" role="alert">
+                        <?= escape_output($error_message) ?>
+                    </div>
+                <?php endif; ?>
 
-            <div class="mb-2">
-                <p class="text-muted font-monospace mb-2">Current Operational Avatar</p>
-                <div class="avatar-wrapper d-inline-block">
-                    <img src="/serve_image.php?file=<?= $display_image ?>" width="120" height="120"
-                        class="rounded-circle avatar-glow" alt="Current Profile Picture">
-                </div>
-            </div>
-
-            <form action="/profile.php" method="POST" enctype="multipart/form-data">
-                <?= csrfField() ?>
-
-                <div class="mb-2">
-                    <label class="form-label text-cyan fw-bold">Update Credentials Image</label>
-                    <input type="file" name="profile_image" class="form-control bg-dark text-light border-info"
-                        accept=".jpg,.jpeg,.png,.gif,.webp">
-                    <div class="form-text text-muted">Accepted formats: JPG, PNG, WEBP (Max 2MB)</div>
+                <div class="mb-4">
+                    <p class="form-label mb-2">Current Avatar</p>
+                    <img src="/serve_image.php?file=<?= $display_image ?>"
+                         width="100" height="100" alt="Current profile picture"
+                         class="rounded-circle tw-avatar">
                 </div>
 
-                <div class="mb-2">
-                    <label class="form-label text-cyan fw-bold">Operational Bio</label>
-                    <textarea name="bio" class="form-control bg-dark text-light border-info" rows="1"
-                        placeholder="Enter your background and mission details..."><?= $display_bio ?></textarea>
-                </div>
+                <form action="/profile.php" method="POST" enctype="multipart/form-data">
+                    <?= csrfField() ?>
 
-                <div class="d-flex gap-3 mt-1">
-                    <button type="submit" class="btn btn-primary w-50">Deploy Changes</button>
-                    <a href="/view_profile.php" class="btn btn-outline-secondary w-50">Abort</a>
-                </div>
-            </form>
+                    <div class="mb-3">
+                        <label for="profile_image" class="form-label">Profile Image</label>
+                        <input type="file" class="form-control" id="profile_image"
+                               name="profile_image" accept=".jpg,.jpeg,.png,.gif,.webp">
+                        <div class="form-text">JPG, PNG, GIF, or WEBP &mdash; max 2 MB</div>
+                    </div>
 
-            <div class="account-security-panel">
-                <h3 class="text-cyan mb-2">Account Security</h3>
+                    <div class="mb-3">
+                        <label for="bio" class="form-label">Bio</label>
+                        <textarea class="form-control" id="bio" name="bio" rows="3"
+                                  placeholder="Tell us about yourself&hellip;"><?= $display_bio ?></textarea>
+                    </div>
 
-                <a href="/change_password.php" class="btn btn-primary w-100">Change Password</a>
+                    <div class="d-flex gap-2 mt-2">
+                        <button type="submit" class="btn btn-primary flex-fill">Save Changes</button>
+                        <a href="/view_profile.php" class="btn btn-outline-secondary flex-fill">Cancel</a>
+                    </div>
+                </form>
+
+                <hr class="tw-divider my-4">
+
+                <h5 class="text-cyan mb-3">Account Security</h5>
+                <a href="/change_password.php" class="btn btn-outline-secondary w-100">Change Password</a>
             </div>
         </div>
     </div>
 
-    <?php include __DIR__ . '/footer.html'; ?>
+    <?php include __DIR__ . '/footer.php'; ?>
 </body>
-
 </html>

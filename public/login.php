@@ -47,8 +47,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         logActivity(LOG_INVALID_INPUT);
     } else {
         try {
-            // All authentication hardening (rate limit, timing defense, session regen)
-            // is handled inside login_user().
             $success = login_user($pdo, $usernameOrEmail, $password);
 
             if ($success === true) {
@@ -75,7 +73,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// Keep page-view analytics on GET only.
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     logActivity(LOG_PAGE_VIEW);
 }
@@ -86,39 +83,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     <?php render_page_head('Transactiwar | Login', csrfMeta()); ?>
 </head>
 <body>
-    <div class="container auth-container container-login">
-        <div class="card">
-            <h2 class="text-center text-glow">Login</h2>
+    <div class="tw-auth-wrap">
+        <div class="tw-auth-card tw-narrow">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="text-center text-glow mb-4">Login</h2>
 
-            <?php if ($error !== ''): ?>
-                <div class="error-msg">
-                    <?= escape_output($error) ?>
+                    <?php if ($error !== ''): ?>
+                        <div class="alert alert-danger" role="alert">
+                            <?= escape_output($error) ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($successMessage !== ''): ?>
+                        <div class="alert alert-success" role="alert">
+                            <?= escape_output($successMessage) ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <form method="POST" action="/login.php">
+                        <?= csrfField() ?>
+
+                        <div class="mb-3">
+                            <label for="identifier" class="form-label">Username or Email</label>
+                            <input type="text" class="form-control" id="identifier"
+                                   name="identifier" required autocomplete="username">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password"
+                                   name="password" required autocomplete="current-password">
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mt-2">Login</button>
+                    </form>
+
+                    <div class="text-center mt-4">
+                        <a href="/register.php" class="text-muted">
+                            Need an account? <span class="text-cyan">Register here</span>
+                        </a>
+                    </div>
                 </div>
-            <?php endif; ?>
-
-            <?php if ($successMessage !== ''): ?>
-                <div class="success-msg">
-                    <?= escape_output($successMessage) ?>
-                </div>
-            <?php endif; ?>
-
-            <form method="POST" action="/login.php">
-                <?= csrfField() ?>
-
-                <div class="mt-2">
-                    <label>Username or Email</label>
-                    <input type="text" name="identifier" required>
-                </div>
-
-                <div class="mt-2">
-                    <label>Password</label>
-                    <input type="password" name="password" required>
-                </div>
-
-                <button type="submit" class="btn-primary mt-4">Login</button>
-            </form>
-            <div class="text-center mt-4">
-                <a href="/register.php" class="text-muted">Need an account? <span class="text-cyan">Register here</span></a>
             </div>
         </div>
     </div>

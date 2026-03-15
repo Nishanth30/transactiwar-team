@@ -13,31 +13,31 @@ require_login();
 ?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <?php render_page_head('Transactiwar | Confirm Logout'); ?>
 </head>
-
 <body>
     <?php include __DIR__ . '/header.html'; ?>
 
-    <div class="container container-confirm mt-4">
-        <div class="card text-center logout-card">
-            <h2 class="text-glow text-danger-glow">Confirm Logout?</h2>
+    <div class="tw-auth-wrap">
+        <div class="tw-auth-card tw-tiny">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <h2 class="text-danger-glow mb-3">Confirm Logout?</h2>
+                    <p class="text-muted mb-4">
+                        Are you sure you want to end your session?
+                    </p>
 
-            <p class="text-muted logout-text">
-                Are you sure you want to end your secure session?
-            </p>
-
-            <form action="/logout.php" method="POST" class="logout-actions">
-                <?= csrfField() ?>
-                <a href="/index.php" class="btn-primary btn-stay">Stay Connected</a>
-                <button type="submit" class="btn-primary btn-leave">Confirm Logout</button>
-            </form>
+                    <form action="/logout.php" method="POST" class="d-flex gap-2">
+                        <?= csrfField() ?>
+                        <a href="/index.php" class="btn btn-outline-secondary flex-fill">Stay</a>
+                        <button type="submit" class="btn btn-outline-danger flex-fill">Logout</button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
-    <?php include __DIR__ . '/footer.html'; ?>
+    <?php include __DIR__ . '/footer.php'; ?>
 </body>
-
 </html>
