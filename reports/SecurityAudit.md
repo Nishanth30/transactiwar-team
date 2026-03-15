@@ -10,9 +10,9 @@ Perform a comprehensive security hardening review of the Transactiwar PHP + MySQ
 ### 1. CRITICAL: Application Denial of Service (DoS) via Thread Exhaustion
 - **Severity:** CRITICAL
 - **File/Location:** `includes/auth.php` (functions `login_user` and `change_password_for_user`)
-- **Attack Scenario:** The authentication rate-limiting logic heavily relies on `sleep($backoffSeconds)` and `usleep(...)` to throttle brute-force attempts. Because PHP (via Apache mod_php or PHP-FPM) uses a fixed pool of worker processes, an attacker can intentionally trigger the lockout and keep multiple connection requests open. By sending a concurrent burst of requests, the attacker will force all PHP workers to sleep simultaneously, causing a complete Denial of Service for the entire application.
-- **Exact Fix:** Remove all `sleep()` and `usleep()` calls. Rate limiting should immediately reject the request without blocking the thread.
-  - In `includes/auth.php`, delete `if ($backoffSeconds > 0) { sleep($backoffSeconds); }` and `usleep(...)` statements in both the `login_user` and `change_password_for_user` functions.
+- **Attack Scenario:** The authentication rate-limiting logic relies on `usleep(...)` to throttle brute-force attempts. Because PHP (via Apache mod_php or PHP-FPM) uses a fixed pool of worker processes, an attacker can intentionally trigger the lockout and keep multiple connection requests open. By sending a concurrent burst of requests to locked endpoints, the attacker will force all PHP workers to sleep simultaneously, causing a complete Denial of Service for the entire application.
+- **Exact Fix:** Remove all `usleep(...)` calls. Rate limiting should immediately reject the request without blocking the thread.
+  - In `includes/auth.php`, delete `usleep(...)` statements in both the `login_user` and `change_password_for_user` functions.
   - Modify the logic to immediately return `'locked'` (yielding an HTTP 429 or generic error) when the attempt count crosses the rate limit threshold.
 
 ### 2. HIGH: Rate Limiting Bypass / DoS via Trusted Proxy IP Mishandling
