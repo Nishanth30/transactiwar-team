@@ -110,96 +110,84 @@ function ensure_session_started(): void
 }
 
 
-/* |-------------------------------------------------------------------------- | Login attempt throttling (DB-backed) | Keyed by identifier+IP hash - clearing cookies does NOT reset this. |-------------------------------------------------------------------------- */
-function is_ip_locked(PDO $pdo, string $attemptKey): bool
-{
-    $now = time();
-    $stmt = $pdo->prepare("
-        SELECT attempts, locked_until, last_attempt
-        FROM login_attempts
-        WHERE ip = :ip
-    ");
-    $stmt->execute(['ip' => $attemptKey]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$row) {
-        return false;
-    }
-
-    // Still within lockout window
-    if ($row['locked_until'] > $now) {
-        return true;
-    }
-
-    return false;
-}
-
-function record_failed_attempt(PDO $pdo, string $attemptKey): void
-{
-    $now = time();
-
-    /*
-     * INSERT new record or UPDATE existing.
-     * If last attempt was outside the activity window, reset counter.
-     * locked_until is only set once MAX_LOGIN_ATTEMPTS (20) is reached
-     * — the exponential backoff handles throttling before that point.
-     */
-    $pdo->prepare("
-        INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
-        VALUES (:ip, 1, 0, :now)
-        ON DUPLICATE KEY UPDATE
-            attempts     = IF(last_attempt < :window, 1, attempts + 1),
-            locked_until = IF(
-                             IF(last_attempt < :window, 1, attempts + 1) >= :max,
-                             :now + :lockout,
-                             locked_until
-                           ),
-            last_attempt = :now
-    ")->execute([
-        'ip' => $attemptKey,
-        'now' => $now,
-        'window' => $now - ATTEMPT_WINDOW,
-        'max' => MAX_LOGIN_ATTEMPTS,
-        'lockout' => LOCKOUT_SECONDS,
-    ]);
-}
+/* |-------------------------------------------------------------------------- | Login attempt throttling (DB-backed) | Keyed by identifier+IP hash - clearing cookies does NOT reset this. | | C2 FIX: gate_login_attempt() uses SELECT … FOR UPDATE to atomically | lock the row, check the lockout state, pre-increment the counter, and | compute the backoff delay — all inside one transaction. This prevents | concurrent requests from reading stale attempt counts and bypassing | the lockout threshold. On successful login the counter is cleared | by clear_failed_attempts() as before. |-------------------------------------------------------------------------- */
 
 /*
- * Exponential backoff delay based on prior failed attempts.
- * Returns seconds of delay to apply BEFORE checking the password.
+ * Atomically gate a login attempt.
  *
- * Formula: 2^attempts seconds, capped at BACKOFF_CAP_SECONDS.
- * Loose cap (30s) is intentional — strong password rules already
- * make brute force impractical without aggressive lockout.
+ * Returns an associative array:
+ *   ['status' => 'locked']                     — hard-locked, reject immediately
+ *   ['status' => 'proceed', 'backoff' => int]  — proceed with password_verify
+ *                                                 after sleeping backoff seconds
  *
- * Delay schedule:
- *   1 fail  →  2s
- *   2 fails →  4s
- *   3 fails →  8s
- *   4 fails → 16s
- *   5+ fails→ 30s (cap)
+ * The counter is pre-incremented BEFORE password_verify() runs, so every
+ * concurrent request that makes it past the gate sees an accurate count.
+ * On successful login, call clear_failed_attempts() to reset.
  */
-function get_backoff_delay(PDO $pdo, string $attemptKey): int
+function gate_login_attempt(PDO $pdo, string $attemptKey): array
 {
-    $stmt = $pdo->prepare("
-        SELECT attempts, last_attempt
-        FROM login_attempts
-        WHERE ip = :ip
-    ");
-    $stmt->execute(['ip' => $attemptKey]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    $now = time();
 
-    if (!$row || $row['attempts'] === 0) {
-        return 0;
+    $pdo->beginTransaction();
+    try {
+        // Lock the row so concurrent requests serialize here.
+        $stmt = $pdo->prepare("
+            SELECT attempts, locked_until, last_attempt
+            FROM login_attempts
+            WHERE ip = :ip
+            FOR UPDATE
+        ");
+        $stmt->execute(['ip' => $attemptKey]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // Hard-lock check (unchanged threshold: MAX_LOGIN_ATTEMPTS failures).
+        if ($row && (int) $row['locked_until'] > $now) {
+            $pdo->commit();
+            return ['status' => 'locked'];
+        }
+
+        // Compute backoff from the state BEFORE this increment.
+        $priorAttempts = 0;
+        if ($row) {
+            $lastAttempt = (int) $row['last_attempt'];
+            $priorAttempts = ($lastAttempt < $now - ATTEMPT_WINDOW)
+                ? 0
+                : (int) $row['attempts'];
+        }
+
+        $backoff = ($priorAttempts > 0)
+            ? (int) min(2 ** $priorAttempts, BACKOFF_CAP_SECONDS)
+            : 0;
+
+        // Pre-increment: record this attempt NOW so the next concurrent
+        // request that acquires the lock sees the updated counter.
+        $pdo->prepare("
+            INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
+            VALUES (:ip, 1, 0, :now)
+            ON DUPLICATE KEY UPDATE
+                attempts     = IF(last_attempt < :window, 1, attempts + 1),
+                locked_until = IF(
+                                 IF(last_attempt < :window, 1, attempts + 1) >= :max,
+                                 :now + :lockout,
+                                 locked_until
+                               ),
+                last_attempt = :now
+        ")->execute([
+            'ip'      => $attemptKey,
+            'now'     => $now,
+            'window'  => $now - ATTEMPT_WINDOW,
+            'max'     => MAX_LOGIN_ATTEMPTS,
+            'lockout' => LOCKOUT_SECONDS,
+        ]);
+
+        $pdo->commit();
+        return ['status' => 'proceed', 'backoff' => $backoff];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
     }
-
-    // Reset if outside the activity window
-    if ($row['last_attempt'] < time() - ATTEMPT_WINDOW) {
-        return 0;
-    }
-
-    $delay = (int) min(2 ** $row['attempts'], BACKOFF_CAP_SECONDS);
-    return $delay;
 }
 
 function clear_failed_attempts(PDO $pdo, string $attemptKey): void
@@ -527,8 +515,12 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
         ? login_attempt_key('uid:' . (string) $user['id'], $ip)
         : login_attempt_key($identifier, $ip);
 
-    // Hard lock check - only triggers after MAX_LOGIN_ATTEMPTS failures.
-    if (is_ip_locked($pdo, $attemptKey)) {
+    // Atomic gate: SELECT … FOR UPDATE serializes concurrent attempts,
+    // checks lockout, pre-increments counter, and computes backoff.
+    // Counter is pre-incremented; cleared on success by clear_failed_attempts().
+    $gate = gate_login_attempt($pdo, $attemptKey);
+
+    if ($gate['status'] === 'locked') {
         if (function_exists('logActivity')) {
             logActivity(LOG_LOGIN_LOCKED);
         }
@@ -537,9 +529,8 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     }
 
     // Exponential backoff - server-side enforced delay based on prior failures.
-    $backoffSeconds = get_backoff_delay($pdo, $attemptKey);
-    if ($backoffSeconds > 0) {
-        sleep($backoffSeconds);
+    if ($gate['backoff'] > 0) {
+        sleep($gate['backoff']);
     }
 
     // Always verify against a real hash to resist timing-based user enumeration.
@@ -549,7 +540,7 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
     usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
 
     if (!$user || !$valid) {
-        record_failed_attempt($pdo, $attemptKey);
+        // Counter already pre-incremented by gate_login_attempt().
         if (function_exists('logActivity')) {
             logActivity(LOG_LOGIN_FAIL);
         }
