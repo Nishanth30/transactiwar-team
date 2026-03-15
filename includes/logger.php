@@ -128,13 +128,20 @@ function logActivity(string $event): void {
         $safeUser  = preg_replace('/[^\w\-.]/', '', (string) ($username ?? 'guest'));
         $safeIp    = filter_var($ip ?? '0.0.0.0', FILTER_VALIDATE_IP) ? $ip : '0.0.0.0';
 
+        // L5 FIX: Sanitize the exception detail before writing to syslog.
+        // getMessage() can contain user-influenced strings (e.g. constraint
+        // violation text) with newlines or control chars that enable log
+        // injection in syslog consumers. We strip non-printable ASCII and
+        // truncate to prevent log flooding.
+        $safeMsg = preg_replace('/[^\x20-\x7E]/', '', substr($e->getMessage(), 0, 200));
+
         openlog('transactiwar', LOG_PID | LOG_NDELAY, LOG_USER);
         syslog(LOG_WARNING, sprintf(
             '[%s] user=%s ip=%s (DB write failed: %s)',
             $safeEvent,
             $safeUser,
             $safeIp,
-            $e->getMessage()
+            $safeMsg
         ));
         closelog();
 
