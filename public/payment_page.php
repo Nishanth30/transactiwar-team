@@ -27,6 +27,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// M9 FIX: Clear the stale transfer_complete flag on new page loads.
+// Previously it was only cleared by visiting index.php, so navigating
+// directly to a new payment form after a successful transfer would
+// incorrectly reject the next POST with "already been processed".
+unset($_SESSION['transfer_complete']);
+
 $targetUuid = sanitize_uuid(get_str('target_uuid'));
 if ($targetUuid === null) {
     logActivity(LOG_INVALID_INPUT);
