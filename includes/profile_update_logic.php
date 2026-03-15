@@ -46,11 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
 
     // B. BIO SANITIZATION: Kills XSS and Null Bytes
-    // 🆕 RED TEAM FIX (E1): Decode HTML entities back to raw text before saving to prevent infinite double-encoding corruption.
-    $new_bio = ''; // 🆕 Initialize to prevent PHP Notice
-    $raw_input_bio = htmlspecialchars_decode($_POST['bio'] ?? '', ENT_QUOTES);
+    $new_bio = '';
+    $raw_input_bio = (string) ($_POST['bio'] ?? '');
 
-    // 🆕 RED TEAM FIX (F4): Reject massive input BEFORE expensive sanitization
+    // Reject massive input BEFORE expensive sanitization
     if (mb_strlen($raw_input_bio, 'UTF-8') > 3000) {
         $error_message = "Your biography is too long. Please limit it to 3,000 characters.";
         logSecurityEvent(LOG_INVALID_INPUT, "Bio exceeded 3000 chars");
