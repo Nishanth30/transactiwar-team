@@ -52,6 +52,14 @@ unset($_SESSION['transfer_complete']);
                     goto search_end;
                 }
 
+                // L4 FIX: Rate-limit searches per authenticated user to prevent
+                // brute-force username enumeration. Keyed by user ID, not IP.
+                $searchUserId = (int) ($_SESSION['user_id'] ?? 0);
+                if ($searchTerm !== '' && is_search_locked($pdo, $searchUserId)) {
+                    echo '<div class="alert alert-danger" role="alert">Too many searches. Please wait a moment before trying again.</div>';
+                    goto search_end;
+                }
+
                 $isUuid = ($searchTerm !== '' && sanitize_uuid($searchTerm) !== null);
                 $searchLooksValid = true;
 
@@ -73,6 +81,7 @@ unset($_SESSION['transfer_complete']);
                         $stmt->execute([':search_val' => $searchTerm]);
                     }
                     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    record_search_attempt($pdo, $searchUserId);
                 } elseif ($searchTerm !== '' && !$searchLooksValid) {
                     logActivity(LOG_INVALID_INPUT);
                 }

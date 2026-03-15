@@ -16,6 +16,9 @@ const PASSWORD_CHANGE_BACKOFF_CAP_SECONDS = 16;
 const MAX_REGISTRATION_ATTEMPTS = 5;        // M5 FIX: hard lock after 5 attempts per IP
 const REGISTRATION_LOCKOUT_SECONDS = 900;   // 15 min lockout
 const REGISTRATION_ATTEMPT_WINDOW = 900;    // reset counter after 15 min inactivity
+const MAX_SEARCH_ATTEMPTS = 30;             // L4 FIX: per-user search cap per window
+const SEARCH_LOCKOUT_SECONDS = 300;         // 5 min cooldown
+const SEARCH_ATTEMPT_WINDOW = 60;           // 30 searches per 60 seconds
 
 /*
  * L1 FIX: Explicit bcrypt cost factor used by ALL password_hash calls and
@@ -476,6 +479,55 @@ function get_registration_lockout_remaining(PDO $pdo, string $ip): int
     }
 
     return (int) $row['locked_until'] - $now;
+}
+
+
+/* |-------------------------------------------------------------------------- | L4 FIX: Search attempt throttling (DB-backed, user-keyed) | Prevents brute-force username enumeration via the exact-match search. | Keyed by user ID so attackers cannot evade by switching IPs. |-------------------------------------------------------------------------- */
+
+function search_attempt_key(int $userId): string
+{
+    return 'search:' . $userId;
+}
+
+function is_search_locked(PDO $pdo, int $userId): bool
+{
+    $now = time();
+    $attemptKey = search_attempt_key($userId);
+    $stmt = $pdo->prepare("
+        SELECT locked_until
+        FROM login_attempts
+        WHERE ip = :ip
+        LIMIT 1
+    ");
+    $stmt->execute(['ip' => $attemptKey]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $row && (int) $row['locked_until'] > $now;
+}
+
+function record_search_attempt(PDO $pdo, int $userId): void
+{
+    $now = time();
+    $attemptKey = search_attempt_key($userId);
+
+    $pdo->prepare("
+        INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
+        VALUES (:ip, 1, 0, :now)
+        ON DUPLICATE KEY UPDATE
+            attempts     = IF(last_attempt < :window, 1, attempts + 1),
+            locked_until = IF(
+                             IF(last_attempt < :window, 1, attempts + 1) >= :max,
+                             :now + :lockout,
+                             locked_until
+                           ),
+            last_attempt = :now
+    ")->execute([
+        'ip'      => $attemptKey,
+        'now'     => $now,
+        'window'  => $now - SEARCH_ATTEMPT_WINDOW,
+        'max'     => MAX_SEARCH_ATTEMPTS,
+        'lockout' => SEARCH_LOCKOUT_SECONDS,
+    ]);
 }
 
 
