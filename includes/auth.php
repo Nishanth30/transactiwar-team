@@ -18,15 +18,24 @@ const REGISTRATION_LOCKOUT_SECONDS = 900;   // 15 min lockout
 const REGISTRATION_ATTEMPT_WINDOW = 900;    // reset counter after 15 min inactivity
 
 /*
+ * L1 FIX: Explicit bcrypt cost factor used by ALL password_hash calls and
+ * the DUMMY_HASH below. The Docker php:8.2-apache image defaults to cost 10,
+ * but PASSWORD_DEFAULT's cost can vary across PHP builds. Pinning it here
+ * ensures DUMMY_HASH verification takes the same time as real user hashes,
+ * eliminating the timing oracle that leaked user existence.
+ */
+const BCRYPT_COST = 10;
+
+/*
  * Real bcrypt hash used when user is missing.
  * Prevents timing-based user enumeration.
  *
- * IMPORTANT: Must be generated with the pre-hash scheme below:
- *   php -r "echo password_hash(base64_encode(hash('sha384', 'dummy_never_matches', true)), PASSWORD_DEFAULT);"
+ * IMPORTANT: Must be generated at BCRYPT_COST with the pre-hash scheme:
+ *   php -r "echo password_hash(base64_encode(hash('sha384', 'dummy_never_matches', true)), PASSWORD_BCRYPT, ['cost' => 10]);"
  * Never reuse a hash from the internet.
  */
 const DUMMY_HASH =
-    '$2y$12$x9/zWz8mWQjBEkOjVY/jx.mTP/Z59pTcwTCxxAtF9qTJxNyAA5Hk.';
+    '$2y$10$WT6nLcra8kUAo6AAp0MJPOJesqh5NjBBySvOD8ogS6uIRaeinc6mi';
 
 /*
  * M6 FIX: Pre-hash passwords with SHA-384 before bcrypt.
@@ -45,7 +54,7 @@ const DUMMY_HASH =
 function safe_password_hash(string $password): string
 {
     $preHash = base64_encode(hash('sha384', $password, true));
-    return password_hash($preHash, PASSWORD_DEFAULT);
+    return password_hash($preHash, PASSWORD_BCRYPT, ['cost' => BCRYPT_COST]);
 }
 
 function safe_password_verify(string $password, string $hash): bool
