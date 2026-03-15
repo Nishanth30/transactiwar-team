@@ -1,8 +1,14 @@
-# 🆕 RED TEAM FIX (V3): Disable execution of any script files in the uploads directory
-<FilesMatch "\.(php|php[0-9]|phtml|phar|cgi|pl|py)$">
-    Require all denied
-</FilesMatch>
+# M2 FIX: This directory is vestigial — the application stores uploads in
+# storage/uploads/ and serves them via public/serve_image.php.
+# Deny all access unconditionally, matching storage/uploads/.htaccess.
 
-# Force scripts to be served as plain text just in case
-Options -ExecCGI
-AddType text/plain .php .php5 .phtml .phar
+# Apache 2.4 — deny all direct requests
+Require all denied
+
+# Disable PHP execution entirely
+php_flag engine off
+Options -ExecCGI -Indexes
+
+# Strip PHP handler so Apache never treats files here as scripts
+RemoveHandler .php .php3 .php4 .php5 .php7 .php8 .phtml .phar
+RemoveType application/x-httpd-php .php .php3 .php4 .php5 .php7 .php8 .phtml .phar
