@@ -1,20 +1,6 @@
 <?php
 
-// error_log('SESSION: ' . print_r($_SESSION, true));
-// error_log('POST: ' . print_r($_POST, true));
-// require_once __DIR__ . '/header.php';
-// send_security_headers();
-// no_cache();
-
-// require_once __DIR__ . '/../config/session.php';
-// require_once __DIR__ . '/auth.php';
-// require_once __DIR__ . '/csrf.php';
-// require_once __DIR__ . '/sanitize.php';
-// require_once __DIR__ . '/logger.php';
-// require_once __DIR__ . '/../config/db.php';
-// TEMP DEBUG — remove after fixing
-
-// REMOVED ALL HEADERS BECAUSE THEY GET CARRIED IN FROM PAYMENT_PAGE
+// Headers are inherited from payment_page.php which includes this file on POST.
 
 require_login();
 verifyCsrf();
