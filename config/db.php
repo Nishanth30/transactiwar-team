@@ -7,12 +7,19 @@ declare(strict_types=1);
  * so contributors can safely require it from any module.
  */
 
-// Environment-driven DB config for Docker + local parity.
-// Defaults exist for developer convenience but docker/.env should provide real values.
-$host = getenv('MYSQL_HOST') ?: 'db';
-$db   = getenv('MYSQL_DATABASE') ?: 'app_database';
-$user = getenv('MYSQL_USER') ?: 'root';
-$pass = getenv('MYSQL_PASSWORD') ?: '';
+// Environment-driven DB config for Docker.
+// All four variables are mandatory -- the app refuses to start without them
+// to prevent silent fallback to root with an empty password.
+$host = getenv('MYSQL_HOST');
+$db   = getenv('MYSQL_DATABASE');
+$user = getenv('MYSQL_USER');
+$pass = getenv('MYSQL_PASSWORD');
+
+if ($host === false || $db === false || $user === false || $pass === false) {
+    http_response_code(500);
+    error_log('FATAL: One or more required database environment variables are not set (MYSQL_HOST, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD).');
+    exit('Internal server error.');
+}
 
 $dsn = "mysql:host={$host};dbname={$db};charset=utf8mb4";
 

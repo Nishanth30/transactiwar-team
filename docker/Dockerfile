@@ -32,6 +32,7 @@ RUN set -eux; \
   echo 'TraceEnable Off'; \
   echo 'ServerName localhost'; \
   } > /etc/apache2/conf-available/hardening.conf; \
+  a2disconf security; \
   a2enconf hardening; \
   a2enmod headers rewrite ssl socache_shmcb; \
   a2ensite default-ssl; \
