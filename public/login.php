@@ -56,6 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($success === 'locked') {
                 $flashError = 'Account temporarily locked. Please try again later.';
+            } elseif ($success === 'throttled') {
+                $flashError = 'Too many attempts. Please wait a moment before trying again.';
             } elseif ($success === 'system') {
                 $flashError = 'Login is temporarily unavailable. Please try again in a minute.';
             } else {

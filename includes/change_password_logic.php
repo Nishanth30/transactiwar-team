@@ -81,6 +81,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $minutes = max(1, (int) ceil($remaining / 60));
             $flashError = 'Too many failed attempts. Try again in ' . $minutes . ' minute(s).';
             logSecurityEvent(LOG_PASSWORD_CHANGE_LOCKED, 'user_id:' . $userId);
+        } elseif ($result === 'throttled') {
+            $flashError = 'Too many attempts. Please wait a moment before trying again.';
+            logActivity(LOG_LOGIN_LOCKED);
         } elseif ($result === 'invalid_current') {
             $flashError = 'Current password is incorrect.';
             logSecurityEvent(LOG_PASSWORD_CHANGE_FAIL, 'current_password_mismatch');

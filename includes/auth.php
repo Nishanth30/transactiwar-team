@@ -116,9 +116,9 @@ function ensure_session_started(): void
  * Atomically gate a login attempt.
  *
  * Returns an associative array:
- *   ['status' => 'locked']                     — hard-locked, reject immediately
- *   ['status' => 'proceed', 'backoff' => int]  — proceed with password_verify
- *                                                 after sleeping backoff seconds
+ *   ['status' => 'locked']                        — hard-locked, reject immediately
+ *   ['status' => 'throttled', 'retry_after' => s] — backoff not yet elapsed, reject with 429
+ *   ['status' => 'proceed']                       — proceed with password_verify
  *
  * The counter is pre-incremented BEFORE password_verify() runs, so every
  * concurrent request that makes it past the gate sees an accurate count.
@@ -147,20 +147,38 @@ function gate_login_attempt(PDO $pdo, string $attemptKey): array
         }
 
         // Compute backoff from the state BEFORE this increment.
+        // H1 FIX: Instead of returning a sleep duration that blocks a PHP-FPM
+        // worker, enforce the delay via timestamp: if not enough time has
+        // elapsed since last_attempt, reject immediately with retry_after.
+        // The attacker still cannot retry faster — they get an instant 429.
         $priorAttempts = 0;
+        $lastAttempt   = 0;
         if ($row) {
-            $lastAttempt = (int) $row['last_attempt'];
+            $lastAttempt   = (int) $row['last_attempt'];
             $priorAttempts = ($lastAttempt < $now - ATTEMPT_WINDOW)
                 ? 0
                 : (int) $row['attempts'];
         }
 
-        $backoff = ($priorAttempts > 0)
-            ? (int) min(2 ** $priorAttempts, BACKOFF_CAP_SECONDS)
-            : 0;
+        if ($priorAttempts > 0) {
+            $backoff = (int) min(2 ** $priorAttempts, BACKOFF_CAP_SECONDS);
+            $elapsed = $now - $lastAttempt;
 
-        // Pre-increment: record this attempt NOW so the next concurrent
-        // request that acquires the lock sees the updated counter.
+            if ($elapsed < $backoff) {
+                // Not enough time has passed — reject without blocking.
+                // Do NOT increment counter: this is a premature retry, not
+                // a new credential guess, so it should not accelerate lockout.
+                $pdo->commit();
+                return [
+                    'status'      => 'throttled',
+                    'retry_after' => $backoff - $elapsed,
+                ];
+            }
+        }
+
+        // Backoff elapsed (or first attempt). Pre-increment: record this
+        // attempt NOW so the next concurrent request that acquires the lock
+        // sees the updated counter.
         $pdo->prepare("
             INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
             VALUES (:ip, 1, 0, :now)
@@ -181,7 +199,7 @@ function gate_login_attempt(PDO $pdo, string $attemptKey): array
         ]);
 
         $pdo->commit();
-        return ['status' => 'proceed', 'backoff' => $backoff];
+        return ['status' => 'proceed'];
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
@@ -262,9 +280,15 @@ function record_password_change_failed_attempt(PDO $pdo, int $userId, string $ip
     ]);
 }
 
-function get_password_change_backoff_delay(PDO $pdo, int $userId, string $ip): int
+/*
+ * Check whether the password-change backoff period has elapsed.
+ * Returns 0 if the caller may proceed, or the remaining seconds to wait.
+ * H1 FIX: Enforced via timestamp comparison instead of sleep().
+ */
+function get_password_change_retry_after(PDO $pdo, int $userId, string $ip): int
 {
     $attemptKey = password_change_attempt_key($userId, $ip);
+    $now = time();
     $stmt = $pdo->prepare("
         SELECT attempts, last_attempt
         FROM login_attempts
@@ -280,11 +304,19 @@ function get_password_change_backoff_delay(PDO $pdo, int $userId, string $ip): i
         return 0;
     }
 
-    if ((int) $row['last_attempt'] < time() - PASSWORD_CHANGE_ATTEMPT_WINDOW) {
+    $lastAttempt = (int) $row['last_attempt'];
+    if ($lastAttempt < $now - PASSWORD_CHANGE_ATTEMPT_WINDOW) {
         return 0;
     }
 
-    return (int) min(2 ** (int) $row['attempts'], PASSWORD_CHANGE_BACKOFF_CAP_SECONDS);
+    $backoff = (int) min(2 ** (int) $row['attempts'], PASSWORD_CHANGE_BACKOFF_CAP_SECONDS);
+    $elapsed = $now - $lastAttempt;
+
+    if ($elapsed < $backoff) {
+        return $backoff - $elapsed; // seconds the caller must still wait
+    }
+
+    return 0;
 }
 
 function clear_password_change_failed_attempts(PDO $pdo, int $userId, string $ip): void
@@ -326,6 +358,7 @@ function get_password_change_lockout_remaining(PDO $pdo, int $userId, string $ip
  * Returns:
  *   true              -> success
  *   'locked'          -> temporary lockout active
+ *   'throttled'       -> backoff not elapsed, caller should return 429
  *   'invalid_current' -> current password mismatch
  *   'same_password'   -> new password equals current
  *   false             -> unexpected failure
@@ -342,9 +375,12 @@ function change_password_for_user(
         return 'locked';
     }
 
-    $backoffSeconds = get_password_change_backoff_delay($pdo, $userId, $ip);
-    if ($backoffSeconds > 0) {
-        sleep($backoffSeconds);
+    // H1 FIX: Enforce backoff via timestamp, not sleep().
+    $retryAfter = get_password_change_retry_after($pdo, $userId, $ip);
+    if ($retryAfter > 0) {
+        header('Retry-After: ' . $retryAfter);
+        http_response_code(429);
+        return 'throttled';
     }
 
     try {
@@ -472,7 +508,7 @@ function register_user(PDO $pdo, string $username, string $email, string $passwo
 }
 
 
-/* |-------------------------------------------------------------------------- | Login user |-------------------------------------------------------------------------- | Returns: |   true     -> success |   'locked' -> identifier/IP is rate-limited |   false    -> invalid credentials | | Security: | - DB-backed identifier+IP throttling (cookie-clearing resistant) | - Anti-enumeration timing protection | - Randomized brute-force delay | - Session fixation prevention | - Session IP binding |-------------------------------------------------------------------------- */
+/* |-------------------------------------------------------------------------- | Login user |-------------------------------------------------------------------------- | Returns: |   true        -> success |   'locked'    -> identifier/IP hard-locked (MAX_LOGIN_ATTEMPTS exceeded) |   'throttled' -> backoff not elapsed, 429 + Retry-After already sent |   'system'    -> session subsystem unavailable |   false       -> invalid credentials | | Security: | - DB-backed identifier+IP throttling (cookie-clearing resistant) | - Anti-enumeration timing protection | - Randomized brute-force delay | - Session fixation prevention | - Session IP binding | - Backoff enforced via timestamp check, not sleep() (H1 fix) |-------------------------------------------------------------------------- */
 function login_user(PDO $pdo, string $identifier, string $password): bool|string
 {
     ensure_session_started();
@@ -528,9 +564,17 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
         return 'locked';
     }
 
-    // Exponential backoff - server-side enforced delay based on prior failures.
-    if ($gate['backoff'] > 0) {
-        sleep($gate['backoff']);
+    // H1 FIX: Backoff is now enforced by timestamp, not sleep().
+    // If the required delay hasn't elapsed, reject instantly with retry_after
+    // so the PHP-FPM worker is freed immediately (~50 concurrent requests
+    // can no longer exhaust the pool by sleeping for 30s each).
+    if ($gate['status'] === 'throttled') {
+        if (function_exists('logActivity')) {
+            logActivity(LOG_LOGIN_LOCKED);
+        }
+        header('Retry-After: ' . $gate['retry_after']);
+        http_response_code(429);
+        return 'throttled';
     }
 
     // Always verify against a real hash to resist timing-based user enumeration.
