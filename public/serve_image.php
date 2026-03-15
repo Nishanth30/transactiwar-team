@@ -38,7 +38,7 @@ $realDefault = realpath($defaultPath);
 // If requested file is missing/stale, fall back to default avatar.
 if (
     $realFile === false ||
-    strpos($realFile, $storageDir) !== 0 ||
+    !str_starts_with($realFile, $storageDir . DIRECTORY_SEPARATOR) ||
     !is_file($realFile)
 ) {
     $realFile = $realDefault;
@@ -47,7 +47,7 @@ if (
 
 if (
     $realFile === false ||
-    strpos($realFile, $storageDir) !== 0 ||
+    !str_starts_with($realFile, $storageDir . DIRECTORY_SEPARATOR) ||
     !is_file($realFile)
 ) {
     http_response_code(404);
