@@ -46,7 +46,10 @@ unset($_SESSION['transfer_complete']);
                 }
 
                 if (!isset($pdo) || $pdo === null) {
-                    die("<div class='alert alert-danger' role='alert'>Database connection failed.</div>");
+                    // L3 FIX: Generic message — the old text confirmed which
+                    // infrastructure component was down, aiding attacker recon.
+                    echo '<div class="alert alert-danger" role="alert">An unexpected error occurred. Please try again later.</div>';
+                    goto search_end;
                 }
 
                 $isUuid = ($searchTerm !== '' && sanitize_uuid($searchTerm) !== null);
@@ -95,6 +98,7 @@ unset($_SESSION['transfer_complete']);
                         echo '</div></div></a>';
                     }
                 }
+                search_end:
                 ?>
             </div>
         </div>
