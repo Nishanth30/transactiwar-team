@@ -30,18 +30,15 @@ This repository is focused on the assignment application itself:
 
 1. Copy `docker/.env.example` to `docker/.env`.
 2. Set `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `SESSION_SECRET`.
-3. Choose a bind address in `APP_BIND` and host ports in `APP_HTTP_PORT` and `APP_PORT`.
-4. Set `CSRF_ALLOWED_ORIGIN` to match that exact HTTPS URL.
+3. Choose a bind address in `APP_BIND`.
+4. Set `CSRF_ALLOWED_ORIGIN` to match the exact HTTPS URL on port `443`.
 5. Start the stack with Docker Compose.
 6. Open the exact URL from `CSRF_ALLOWED_ORIGIN` in your browser.
 
 Default deployment URL:
 
-- `APP_HTTP_PORT=80`, `APP_PORT=443` -> `http://<host>/` redirects to `https://<host>/`
-
-Example local URL choice when standard ports are busy:
-
-- `APP_HTTP_PORT=8080`, `APP_PORT=8443` -> `http://localhost:8080/` redirects to `https://localhost:8443/`
+- `http://<host>/` on `80` redirects to `https://<host>/`
+- `https://<host>/` serves the application on `443`
 
 ## Environment Setup
 
@@ -58,8 +55,6 @@ Required values in `docker/.env`:
 - `MYSQL_USER`
 - `MYSQL_PASSWORD`
 - `APP_BIND`
-- `APP_HTTP_PORT`
-- `APP_PORT`
 - `CSRF_ALLOWED_ORIGIN`
 - `APP_DIAGNOSTIC_MODE`
 - `SESSION_SECRET`
@@ -82,9 +77,7 @@ Recommended local default:
 
 ```dotenv
 APP_BIND=127.0.0.1
-APP_HTTP_PORT=8080
-APP_PORT=8443
-CSRF_ALLOWED_ORIGIN=https://localhost:8443
+CSRF_ALLOWED_ORIGIN=https://localhost
 TRUSTED_PROXIES=
 ENFORCE_HTTPS=1
 GENERATE_SELF_SIGNED_TLS=1
@@ -97,17 +90,13 @@ If you run using `127.0.0.1`, set:
 
 ```dotenv
 APP_BIND=127.0.0.1
-APP_HTTP_PORT=8080
-APP_PORT=8443
-CSRF_ALLOWED_ORIGIN=https://127.0.0.1:8443
+CSRF_ALLOWED_ORIGIN=https://127.0.0.1
 ```
 
 If you want deployment-style standard ports, set:
 
 ```dotenv
 APP_BIND=0.0.0.0
-APP_HTTP_PORT=80
-APP_PORT=443
 CSRF_ALLOWED_ORIGIN=https://10.96.1.242
 ```
 
@@ -263,8 +252,6 @@ Minimum VM-specific `docker/.env` changes:
 
 ```dotenv
 APP_BIND=0.0.0.0
-APP_HTTP_PORT=80
-APP_PORT=443
 CSRF_ALLOWED_ORIGIN=https://10.96.1.242
 TLS_CERT_CN=10.96.1.242
 TLS_CERT_SAN=IP:10.96.1.242

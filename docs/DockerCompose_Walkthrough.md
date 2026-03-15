@@ -188,14 +188,14 @@ This prevents race conditions:
 
 ```yaml
 ports:
-  - "${APP_BIND:-0.0.0.0}:${APP_HTTP_PORT:-80}:80"
-  - "${APP_BIND:-0.0.0.0}:${APP_PORT:-443}:443"
+  - "${APP_BIND:-0.0.0.0}:80:80"
+  - "${APP_BIND:-0.0.0.0}:443:443"
 ```
 
 - `APP_BIND=127.0.0.1` keeps the app on loopback for local-only development.
 - `APP_BIND=0.0.0.0` exposes the published HTTPS port on all interfaces, which is what the assignment VM needs.
-- `APP_HTTP_PORT` controls the host-side HTTP port.
-- `APP_PORT` controls the host-side HTTPS port.
+- Host port `80` is reserved for HTTP redirect traffic.
+- Host port `443` is reserved for the HTTPS application endpoint.
 
 ### Code + Data Mounts
 
@@ -263,7 +263,7 @@ can reinitialize the target database cleanly.
 | Deterministic seed users | One-shot `setup` service + `setup.sh` |
 | Startup race prevention | Health-based + completion-based `depends_on` |
 | DB isolation | No DB ports + `backend` internal network |
-| App host exposure scope | `${APP_BIND}:${APP_HTTP_PORT}:80` and `${APP_BIND}:${APP_PORT}:443` |
+| App host exposure scope | `${APP_BIND}:80:80` and `${APP_BIND}:443:443` |
 | Runtime privilege control | `no-new-privileges:true` on all services |
 | Writable filesystem minimization | Read-only `setup` + read-only app code mount |
 | App-side secret file exposure reduced | `docker/.env` path in app container is overridden with `.env.example` |

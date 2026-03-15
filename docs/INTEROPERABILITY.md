@@ -46,7 +46,7 @@ All members must use these runtime assumptions:
 - Startup order is enforced as `db (healthy) -> setup (seed) -> app`.
 - Team-local secrets are in `docker/.env`; never commit that file.
 - Required env vars:
-`MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `APP_BIND`, `APP_HTTP_PORT`, `APP_PORT`, `APP_DIAGNOSTIC_MODE`, `SESSION_SECRET`
+`MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `APP_BIND`, `CSRF_ALLOWED_ORIGIN`, `APP_DIAGNOSTIC_MODE`, `SESSION_SECRET`
 - Optional setup tuning vars:
 `DB_WAIT_ATTEMPTS`, `DB_WAIT_SLEEP_SECONDS`
 

@@ -55,14 +55,12 @@ Use VM-accessible network and TLS settings:
 
 ```dotenv
 APP_BIND=0.0.0.0
-APP_HTTP_PORT=80
-APP_PORT=443
 CSRF_ALLOWED_ORIGIN=https://10.96.1.242
 TLS_CERT_CN=10.96.1.242
 TLS_CERT_SAN=IP:10.96.1.242
 ```
 
-If you choose a different HTTPS port, update both `APP_PORT` and `CSRF_ALLOWED_ORIGIN`. If you change the HTTP port, update `APP_HTTP_PORT` as well.
+The deployment uses fixed host ports `80` and `443`. Only update `CSRF_ALLOWED_ORIGIN` and TLS host/IP values to match the VM.
 
 ## 4. Regenerate TLS certs for the VM
 
