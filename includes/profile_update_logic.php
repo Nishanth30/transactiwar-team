@@ -122,10 +122,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
                         }
                         elseif ($mime_type === 'image/gif') {
+                            // M4 FIX: GD's imagegif() preserves GIF89a comment
+                            // extension blocks, which can carry PHP polyglot
+                            // payloads that survive a round-trip. Converting to
+                            // PNG strips all GIF-specific metadata completely.
                             $img = @imagecreatefromgif($new_file_destination);
                             if ($img) {
-                                $reprocess_success = imagegif($img, $new_file_destination);
+                                $png_dest = preg_replace('/\.gif$/i', '.png', $new_file_destination);
+                                $reprocess_success = imagepng($img, $png_dest);
                                 imagedestroy($img);
+                                if ($reprocess_success) {
+                                    unlink($new_file_destination);
+                                    $new_file_destination = $png_dest;
+                                    $final_filename = preg_replace('/\.gif$/i', '.png', $final_filename);
+                                }
                             }
                         }
                         elseif ($mime_type === 'image/webp') {
