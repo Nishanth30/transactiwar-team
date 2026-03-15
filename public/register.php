@@ -32,6 +32,22 @@ if (isset($_SESSION['user_id'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
 
+    // M5 FIX: Rate-limit registration by IP before any expensive work
+    // (validation, bcrypt hashing, DB insert). Prevents enumeration,
+    // spam account creation, and CPU exhaustion via bcrypt.
+    $regIp = function_exists('get_client_ip')
+        ? get_client_ip()
+        : sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+
+    if (is_registration_locked($pdo, $regIp)) {
+        $remaining = get_registration_lockout_remaining($pdo, $regIp);
+        $minutes = max(1, (int) ceil($remaining / 60));
+        $_SESSION['flash_error'] = 'Too many registration attempts. Please try again in ' . $minutes . ' minute(s).';
+        logActivity(LOG_INVALID_INPUT);
+        header('Location: /register.php');
+        exit;
+    }
+
     $username = post_str('username');
     $email = normalize_email(post_str('email'));
     $password = (string) ($_POST['password'] ?? '');
@@ -66,6 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash_error = 'Registration failed.';
         }
     }
+
+    // Count every POST attempt (success or failure) toward the rate limit.
+    // This prevents an attacker from enumerating usernames/emails without
+    // triggering the lockout by only sending valid registrations.
+    record_registration_attempt($pdo, $regIp);
 
     if ($flash_error !== '') {
         $_SESSION['flash_error'] = $flash_error;

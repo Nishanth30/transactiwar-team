@@ -13,6 +13,9 @@ const MAX_PASSWORD_CHANGE_ATTEMPTS = 5;
 const PASSWORD_CHANGE_LOCKOUT_SECONDS = 900;
 const PASSWORD_CHANGE_ATTEMPT_WINDOW = 900;
 const PASSWORD_CHANGE_BACKOFF_CAP_SECONDS = 16;
+const MAX_REGISTRATION_ATTEMPTS = 5;        // M5 FIX: hard lock after 5 attempts per IP
+const REGISTRATION_LOCKOUT_SECONDS = 900;   // 15 min lockout
+const REGISTRATION_ATTEMPT_WINDOW = 900;    // reset counter after 15 min inactivity
 
 /*
  * Real bcrypt hash used when user is missing.
@@ -351,6 +354,75 @@ function get_password_change_lockout_remaining(PDO $pdo, int $userId, string $ip
 
     return (int) $row['locked_until'] - $now;
 }
+
+/* |-------------------------------------------------------------------------- | M5 FIX: Registration attempt throttling (DB-backed, IP-keyed) | Reuses the login_attempts table with a 'reg:' prefix to rate-limit | registration attempts. Prevents username/email enumeration at scale, | spam account creation, and bcrypt CPU exhaustion. |-------------------------------------------------------------------------- */
+
+function registration_attempt_key(string $ip): string
+{
+    return 'reg:' . substr(hash('sha256', $ip), 0, 16);
+}
+
+function is_registration_locked(PDO $pdo, string $ip): bool
+{
+    $now = time();
+    $attemptKey = registration_attempt_key($ip);
+    $stmt = $pdo->prepare("
+        SELECT locked_until
+        FROM login_attempts
+        WHERE ip = :ip
+        LIMIT 1
+    ");
+    $stmt->execute(['ip' => $attemptKey]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $row && (int) $row['locked_until'] > $now;
+}
+
+function record_registration_attempt(PDO $pdo, string $ip): void
+{
+    $now = time();
+    $attemptKey = registration_attempt_key($ip);
+
+    $pdo->prepare("
+        INSERT INTO login_attempts (ip, attempts, locked_until, last_attempt)
+        VALUES (:ip, 1, 0, :now)
+        ON DUPLICATE KEY UPDATE
+            attempts     = IF(last_attempt < :window, 1, attempts + 1),
+            locked_until = IF(
+                             IF(last_attempt < :window, 1, attempts + 1) >= :max,
+                             :now + :lockout,
+                             locked_until
+                           ),
+            last_attempt = :now
+    ")->execute([
+        'ip'      => $attemptKey,
+        'now'     => $now,
+        'window'  => $now - REGISTRATION_ATTEMPT_WINDOW,
+        'max'     => MAX_REGISTRATION_ATTEMPTS,
+        'lockout' => REGISTRATION_LOCKOUT_SECONDS,
+    ]);
+}
+
+function get_registration_lockout_remaining(PDO $pdo, string $ip): int
+{
+    $now = time();
+    $attemptKey = registration_attempt_key($ip);
+    $stmt = $pdo->prepare("
+        SELECT locked_until
+        FROM login_attempts
+        WHERE ip = :ip
+        LIMIT 1
+    ");
+    $stmt->execute(['ip' => $attemptKey]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row || (int) $row['locked_until'] <= $now) {
+        return 0;
+    }
+
+    return (int) $row['locked_until'] - $now;
+}
+
 
 /*
  * Change password for an authenticated user.
