@@ -122,7 +122,22 @@ function logActivity(string $event): void {
         _logToDatabase($userId, $username, $event, $ip);
 
     } catch (Throwable $e) {
-        // Never throw into business flow. Keep diagnostics in server logs.
+        // Never throw into business flow.
+        // Fallback to syslog so events survive a DB outage and appear in docker logs.
+        $safeEvent = preg_replace('/[^\w\-:.]/', '', $event ?? 'UNKNOWN');
+        $safeUser  = preg_replace('/[^\w\-.]/', '', (string) ($username ?? 'guest'));
+        $safeIp    = filter_var($ip ?? '0.0.0.0', FILTER_VALIDATE_IP) ? $ip : '0.0.0.0';
+
+        openlog('transactiwar', LOG_PID | LOG_NDELAY, LOG_USER);
+        syslog(LOG_WARNING, sprintf(
+            '[%s] user=%s ip=%s (DB write failed: %s)',
+            $safeEvent,
+            $safeUser,
+            $safeIp,
+            $e->getMessage()
+        ));
+        closelog();
+
         error_log('Activity log DB write failed: ' . $e->getMessage());
     }
 }
