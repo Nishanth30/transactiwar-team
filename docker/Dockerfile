@@ -16,11 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libwebp-dev \
   libgif-dev \
   openssl \
-  gosu \
   && docker-php-ext-configure gd --with-jpeg --with-webp \
   && docker-php-ext-install gd pdo pdo_mysql mysqli \
-  && rm -rf /var/lib/apt/lists/* \
-  && gosu nobody true
+  && rm -rf /var/lib/apt/lists/*
 
 COPY docker/apache/000-default.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/apache/default-ssl.conf /etc/apache2/sites-available/default-ssl.conf
@@ -46,6 +44,8 @@ RUN set -eux; \
   echo 'log_errors = On'; \
   echo 'session.use_strict_mode = 1'; \
   echo 'session.cookie_httponly = 1'; \
+  echo 'session.cookie_secure = 1'; \
+  echo 'session.cookie_samesite = Strict'; \
   } > /usr/local/etc/php/conf.d/security.ini; \
   # H6 FIX: Move Apache to unprivileged ports (8080/8443) so the entire \
   # process can run as www-data. Docker-compose maps host 80→8080, 443→8443. \

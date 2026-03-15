@@ -55,6 +55,7 @@ fi
 # ── H6 FIX: Drop to www-data for the entire Apache process ────────────
 # Apache now listens on unprivileged ports (8080/8443) so it no longer
 # needs root for port binding. Docker-compose maps host 80→8080, 443→8443.
-# gosu replaces the current process (PID 1) with www-data ownership,
-# so any RCE through the PHP application starts as www-data, not root.
-exec gosu www-data "$@"
+# setpriv (part of util-linux, already in the Debian base image) replaces
+# the current process with www-data uid/gid, so any RCE through the PHP
+# application cannot escalate to root. No external tools required.
+exec setpriv --reuid=www-data --regid=www-data --init-groups "$@"
