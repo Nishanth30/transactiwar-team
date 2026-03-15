@@ -23,7 +23,8 @@ define('MAX_BIO_LEN', 65535); // TEXT column
 define('MAX_COMMENT_LEN', 500); // transactions.receiver_comment
 define('MAX_FILEPATH_LEN', 512); // users.profile_image_path
 define('MAX_WEBPAGE_LEN', 255); // activity_logs.webpage
-define('MIN_TRANSFER_PAISE', 100); // ₹1.00 minimum
+define('MIN_TRANSFER_PAISE',     100);         // ₹1.00 minimum
+define('MAX_TRANSFER_PAISE', 100_000_000);    // ₹10,00,000.00 (10 lakh) cap
 define('PUBLIC_ID_LEN', 36); // UUID string: 8-4-4-4-12
 
 
@@ -267,17 +268,24 @@ function sanitize_uint(mixed $value): ?int
 
 /**
  * Sanitize a transfer amount in paise.
- * Must be integer, minimum ₹1.00 (100 paise).
+ * Must be a positive integer between MIN_TRANSFER_PAISE and MAX_TRANSFER_PAISE.
+ *
+ * H4 FIX: Added upper bound. Without a cap, a near-PHP_INT_MAX value could
+ * overflow the receiver's BIGINT UNSIGNED balance column (2^64-1), causing a
+ * MySQL error that rolls back the transaction — a targeted DoS against any
+ * receiver account. The explicit positive check ($int <= 0) is defense-in-depth
+ * against negative values that might bypass the MIN_TRANSFER_PAISE comparison
+ * if sanitize_int() ever changes.
  *
  * Usage:
  *   $amount = sanitize_amount($_POST['amount_paise']);
- *   if ($amount === null) { $error = 'Minimum transfer is ₹1'; }
+ *   if ($amount === null) { $error = 'Invalid transfer amount'; }
  */
 function sanitize_amount(mixed $value): ?int
 {
     $int = sanitize_int($value);
 
-    if ($int === null || $int < MIN_TRANSFER_PAISE) {
+    if ($int === null || $int <= 0 || $int < MIN_TRANSFER_PAISE || $int > MAX_TRANSFER_PAISE) {
         return null;
     }
 

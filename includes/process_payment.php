@@ -54,7 +54,7 @@ $amount_paise = sanitize_amount((string) round((float)$raw_rupees * 100));
 // ── Early-exit guards ────────────────────────────────────────────
 if ($amount_paise === null) {
     logActivity(LOG_TRANSFER_INVALID);
-    $_SESSION['transfer_error'] = "Minimum transfer amount is ₹1.00.";
+    $_SESSION['transfer_error'] = "Transfer amount must be between ₹1.00 and ₹10,00,000.00.";
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
 }
