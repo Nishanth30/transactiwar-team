@@ -122,19 +122,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
                         }
                         elseif ($mime_type === 'image/gif') {
-                            // M4 FIX: GD's imagegif() preserves GIF89a comment
-                            // extension blocks, which can carry PHP polyglot
-                            // payloads that survive a round-trip. Converting to
-                            // PNG strips all GIF-specific metadata completely.
+                            // GD repaint to strip PHP polyglots
                             $img = @imagecreatefromgif($new_file_destination);
                             if ($img) {
-                                $png_dest = preg_replace('/\.gif$/i', '.png', $new_file_destination);
+                                // FIX: Strip ANY existing extension and force .png
+                                $png_dest = preg_replace('/\.[a-zA-Z0-9]+$/', '.png', $new_file_destination);
                                 $reprocess_success = imagepng($img, $png_dest);
                                 imagedestroy($img);
+                                
                                 if ($reprocess_success) {
-                                    unlink($new_file_destination);
+                                    // Only delete the old file if the path actually changed
+                                    if ($new_file_destination !== $png_dest) {
+                                        unlink($new_file_destination);
+                                    }
                                     $new_file_destination = $png_dest;
-                                    $final_filename = preg_replace('/\.gif$/i', '.png', $final_filename);
+                                    $final_filename = preg_replace('/\.[a-zA-Z0-9]+$/', '.png', $final_filename);
                                 }
                             }
                         }
