@@ -31,7 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Previously it was only cleared by visiting index.php, so navigating
 // directly to a new payment form after a successful transfer would
 // incorrectly reject the next POST with "already been processed".
-unset($_SESSION['transfer_complete']);
+// unset($_SESSION['transfer_complete']);
+
+// Removed unset to ensure pressing back button and paying again wont cause a payment.
 
 $targetUuid = sanitize_uuid(get_str('target_uuid'));
 if ($targetUuid === null) {
@@ -51,6 +53,19 @@ if (!$receiver) {
     header('Location: ' . sanitize_header('/index.php'));
     exit;
 }
+
+
+$pageLoadId = bin2hex(random_bytes(16));
+
+if (isset($_SESSION['page_load_id_' . $targetUuid])) {
+    // A previous load's ID is still unconsumed — this is a back-button replay.
+    // Do NOT clear transfer_complete, so the old nonce stays invalid.
+} else {
+    // Genuine fresh navigation — clear stale state.
+    unset($_SESSION['transfer_complete']);
+}
+
+$_SESSION['page_load_id_' . $targetUuid] = $pageLoadId;
 
 // H5 FIX: Key the nonce by target UUID so each tab gets its own slot.
 // The old single-slot design meant Tab B overwrote Tab A's nonce, either
@@ -102,6 +117,7 @@ logActivity(LOG_PAGE_VIEW);
                     <?= csrfField() ?>
                     <input type="hidden" name="transfer_nonce" value="<?= escape_attr($transferNonce) ?>">
                     <input type="hidden" name="target_uuid" value="<?= escape_attr($targetUuid) ?>">
+                    <input type="hidden" name="page_load_id" value="<?= escape_attr($pageLoadId) ?>">
 
                     <div class="mb-3">
                         <label for="amount" class="form-label">Amount (&#8377;)</label>

@@ -24,14 +24,26 @@ if (!$nonce || !isset($_SESSION[$nonceKey]) ||
 // Consume immediately — one use only
 unset($_SESSION[$nonceKey]);
 
+$pageLoadKey = 'page_load_id_' . ($nonceTargetId ?? '');
+$submittedPageLoadId = post_str('page_load_id');
+
+if (!$submittedPageLoadId ||
+    !isset($_SESSION[$pageLoadKey]) ||
+    !hash_equals($_SESSION[$pageLoadKey], $submittedPageLoadId)) {
+    logActivity(LOG_TRANSFER_INVALID);
+    $_SESSION['transfer_error'] = "Invalid or expired page session.";
+    header("Location: " . sanitize_header("/transaction_result.php"));
+    exit;
+}
+unset($_SESSION[$pageLoadKey]); // Consume immediately alongside the nonce
+
+
+
 $_SESSION['transfer_result'] = "fail";
 
 $sender_id = (int) $_SESSION['user_id'];
 
-// Validate UUID format — rejects anything that isn't a well-formed UUID.
-// sanitize_uuid() returns null on malformed input, preventing junk DB lookups.
-// post_str('username') intentionally removed — it was read but never used,
-// creating a dead input that could mislead future readers.
+
 $target_uuid = sanitize_uuid(post_str('target_uuid'));
 
 // sanitize_comment() strips HTML, control chars, enforces 500-char limit.
