@@ -46,10 +46,6 @@ RUN set -eux; \
   echo 'session.cookie_httponly = 1'; \
   echo 'session.cookie_secure = 1'; \
   echo 'session.cookie_samesite = Strict'; \
-  echo 'session.save_path = /var/lib/php/sessions'; \
-  echo 'session.gc_probability = 1'; \
-  echo 'session.gc_divisor = 10'; \
-  echo 'session.gc_maxlifetime = 600'; \
   } > /usr/local/etc/php/conf.d/security.ini; \
   # H6 FIX: Move Apache to unprivileged ports (8080/8443) so the entire \
   # process can run as www-data. Docker-compose maps host 80→8080, 443→8443. \
@@ -57,18 +53,6 @@ RUN set -eux; \
   sed -ri -e 's/Listen 443$/Listen 8443/' /etc/apache2/ports.conf; \
   # Grant www-data ownership of directories Apache needs to write at runtime \
   chown -R www-data:www-data /var/log/apache2 /var/run/apache2 /var/lock/apache2 2>/dev/null || true
-
-# D1 FIX: Dedicated session directory isolated from /tmp to prevent session
-# flood DoS from filling the general-purpose tmpfs.
-RUN set -eux; \
-  mkdir -p /var/lib/php/sessions; \
-  chown www-data:www-data /var/lib/php/sessions; \
-  chmod 1733 /var/lib/php/sessions
-
-# D2 FIX: Tune Apache prefork MPM — lower MaxRequestWorkers to match the
-# container's 1 CPU / 512MB constraint, and recycle children to bound
-# memory growth and session-creation rate under flood.
-COPY docker/apache/mpm_prefork.conf /etc/apache2/mods-available/mpm_prefork.conf
 
 # H6 FIX: Pre-create runtime directories with www-data ownership at build
 # time so the entrypoint can drop root before exec-ing Apache.

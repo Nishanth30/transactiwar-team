@@ -2,11 +2,6 @@
 
 declare(strict_types=1);
 
-// D3 FIX: Global rate limiter runs BEFORE session_start() to prevent
-// session-flood DoS that fills the /tmp tmpfs with session files.
-require_once __DIR__ . '/../includes/rate_limiter.php';
-check_global_rate_limit();
-
 require_once __DIR__ . '/../includes/request.php';
 
 ini_set('session.use_strict_mode', '1');

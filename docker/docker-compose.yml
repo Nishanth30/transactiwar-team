@@ -73,7 +73,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=64M
-      - /var/lib/php/sessions:noexec,nosuid,size=128M
       - /var/run/apache2:noexec,nosuid,size=1M
       - /var/lock/apache2:noexec,nosuid,size=1M
       - /var/log/apache2:noexec,nosuid,size=32M
