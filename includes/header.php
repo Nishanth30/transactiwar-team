@@ -1,7 +1,6 @@
 <?php
 
-declare(strict_types = 1)
-;
+declare(strict_types=1);
 
 require_once __DIR__ . '/request.php';
 
@@ -217,6 +216,6 @@ function render_page_head(string $title, string $extraHead = ''): void
     if ($extraHead !== '') {
         echo $extraHead . PHP_EOL;
     }
-    echo '<link rel="stylesheet" href="/assets/vendor/bootstrap/css/bootstrap.min.css" integrity="sha384-iyVHgWdgbOYA1Qxlw7jRhcp52l0uPEs4zrd0MRrcr1fDCFRPyz0k1VrxB1urC55B" crossorigin="anonymous">' . PHP_EOL;
+    echo '<link rel="stylesheet" href="/assets/vendor/bootstrap/css/bootstrap.min.css" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH">' . PHP_EOL;
     echo '<link rel="stylesheet" href="/assets/css/style.css">' . PHP_EOL;
 }
