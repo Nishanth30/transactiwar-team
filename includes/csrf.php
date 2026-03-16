@@ -6,19 +6,28 @@
 //                  session fixation binding, origin spoofing, output buffer leaks,
 //                  weak SameSite cookie config
 
-declare(strict_types=1);
+declare(strict_types = 1)
+;
 
 require_once __DIR__ . '/request.php';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-define('CSRF_TOKEN_BYTES',   32);              // 256-bit raw entropy
-define('CSRF_POOL_KEY',     'csrf_pool');      // H3 FIX: session key for token pool
-define('CSRF_FIELD_NAME',   'csrf_token');
-define('CSRF_HEADER_NAME',  'X-CSRF-Token');   // for AJAX requests
-define('CSRF_MAX_AGE',      3600);             // token expires after 1 hour (seconds)
-define('CSRF_MAX_TOKENS',   5);                // max concurrent tokens (multi-tab support)
-define('CSRF_ALLOWED_ORIGIN', trim((string) (getenv('CSRF_ALLOWED_ORIGIN') ?: ''))); // e.g. https://example.com
+define('CSRF_TOKEN_BYTES', 32); // 256-bit raw entropy
+define('CSRF_POOL_KEY', 'csrf_pool'); // H3 FIX: session key for token pool
+define('CSRF_FIELD_NAME', 'csrf_token');
+define('CSRF_HEADER_NAME', 'X-CSRF-Token'); // for AJAX requests
+define('CSRF_MAX_AGE', 3600); // token expires after 1 hour (seconds)
+define('CSRF_MAX_TOKENS', 5); // max concurrent tokens (multi-tab support)
+$allowedOrigin = trim((string)getenv('CSRF_ALLOWED_ORIGIN'));
+if ($allowedOrigin === '') {
+    error_log('WARNING: CSRF_ALLOWED_ORIGIN not set - origin validation disabled');
+    // Hard fail in production to ensure security
+    if (getenv('APP_ENV') === 'production' || getenv('APP_DEBUG') !== '1') {
+        throw new RuntimeException('CSRF_ALLOWED_ORIGIN must be set in production');
+    }
+}
+define('CSRF_ALLOWED_ORIGIN', $allowedOrigin);
 
 
 // ─── Internal Helpers ────────────────────────────────────────────────────────
@@ -28,7 +37,8 @@ define('CSRF_ALLOWED_ORIGIN', trim((string) (getenv('CSRF_ALLOWED_ORIGIN') ?: ''
  * Clears any buffered output first so partial page content isn't sent.
  * Generic message to avoid leaking reason details to attacker.
  */
-function _csrfFail(string $reason): never {
+function _csrfFail(string $reason): never
+{
     // Flush and discard any buffered output to prevent partial page leaks
     while (ob_get_level() > 0) {
         ob_end_clean();
@@ -52,12 +62,13 @@ function _csrfFail(string $reason): never {
  * Also warns if SameSite cookie is not configured — CSRF protection
  * is weakened without it.
  */
-function _csrfAssertSession(): void {
+function _csrfAssertSession(): void
+{
     if (session_status() !== PHP_SESSION_ACTIVE) {
         // Hard crash — developer error, not a user error
         throw new RuntimeException(
             'csrf.php: session_start() must be called before any CSRF function.'
-        );
+            );
     }
 
     // Warn (once per request) if session cookie has no SameSite attribute.
@@ -89,7 +100,8 @@ function _csrfAssertSession(): void {
  * NOTE: If CSRF_ALLOWED_ORIGIN is left empty the check is skipped entirely.
  * You should always set it in production.
  */
-function _csrfCheckOrigin(): bool {
+function _csrfCheckOrigin(): bool
+{
     $allowed = CSRF_ALLOWED_ORIGIN;
 
     // Fail-safe default: if env var is unset, enforce same-origin for this host.
@@ -109,10 +121,10 @@ function _csrfCheckOrigin(): bool {
         // Referer may include a path — only compare the scheme+host portion
         $referer = $_SERVER['HTTP_REFERER'] ?? '';
         if ($referer !== '') {
-            $parts  = parse_url($referer);
+            $parts = parse_url($referer);
             $scheme = $parts['scheme'] ?? '';
-            $host   = $parts['host']   ?? '';
-            $port   = isset($parts['port']) ? ':' . $parts['port'] : '';
+            $host = $parts['host'] ?? '';
+            $port = isset($parts['port']) ? ':' . $parts['port'] : '';
             $origin = $scheme . '://' . $host . $port;
         }
     }
@@ -122,7 +134,7 @@ function _csrfCheckOrigin(): bool {
          * Some privacy settings/policies can strip Origin + Referer.
          * In that case, rely on Fetch Metadata as a strict fallback.
          */
-        $fetchSite = strtolower(trim((string) ($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '')));
+        $fetchSite = strtolower(trim((string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '')));
         if (in_array($fetchSite, ['same-origin', 'same-site', 'none'], true)) {
             return true;
         }
@@ -161,7 +173,8 @@ function _csrfCheckOrigin(): bool {
  *   - If the pool exceeds CSRF_MAX_TOKENS, the oldest entry is evicted.
  *   - Legacy single-slot key ('csrf_token') is cleaned up on first call.
  */
-function csrfGenerate(): string {
+function csrfGenerate(): string
+{
     _csrfAssertSession();
 
     // Ensure per-session HMAC secret exists.
@@ -174,10 +187,10 @@ function csrfGenerate(): string {
     unset($_SESSION['csrf_token']);
 
     // Build the new token.
-    $raw   = bin2hex(random_bytes(CSRF_TOKEN_BYTES));            // 64 hex chars
-    $hmac  = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);
+    $raw = bin2hex(random_bytes(CSRF_TOKEN_BYTES)); // 64 hex chars
+    $hmac = hash_hmac('sha256', $raw, $_SESSION['csrf_secret']);
     $token = $hmac . '.' . $raw;
-    $now   = time();
+    $now = time();
 
     // Initialise / sanitise the pool.
     if (!isset($_SESSION[CSRF_POOL_KEY]) || !is_array($_SESSION[CSRF_POOL_KEY])) {
@@ -187,12 +200,12 @@ function csrfGenerate(): string {
     // Prune expired entries.
     $_SESSION[CSRF_POOL_KEY] = array_values(array_filter(
         $_SESSION[CSRF_POOL_KEY],
-        static fn(array $e): bool => ($now - ($e['created_at'] ?? 0)) <= CSRF_MAX_AGE
+    static fn(array $e): bool => ($now - ($e['created_at'] ?? 0)) <= CSRF_MAX_AGE
     ));
 
     // Append the new token.
     $_SESSION[CSRF_POOL_KEY][] = [
-        'token'      => $token,
+        'token' => $token,
         'created_at' => $now,
     ];
 
@@ -214,7 +227,8 @@ function csrfGenerate(): string {
  * that every form and meta tag on the same page shares the same value,
  * while different page loads (tabs) each receive a unique token.
  */
-function csrfToken(): string {
+function csrfToken(): string
+{
     // Per-request cache: all forms rendered in the same response share one
     // token so we only consume one pool slot per page load.
     static $requestToken = null;
@@ -235,9 +249,10 @@ function csrfToken(): string {
  * Usage inside any form:
  *     <?= csrfField() ?>
  */
-function csrfField(): string {
+function csrfField(): string
+{
     $token = htmlspecialchars(csrfToken(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $name  = htmlspecialchars(CSRF_FIELD_NAME, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $name = htmlspecialchars(CSRF_FIELD_NAME, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
     return '<input type="hidden" name="' . $name . '" value="' . $token . '">';
 }
@@ -257,7 +272,8 @@ function csrfField(): string {
  *         body: formData
  *     });
  */
-function csrfMeta(): string {
+function csrfMeta(): string
+{
     $token = htmlspecialchars(csrfToken(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     return '<meta name="csrf-token" content="' . $token . '">';
 }
@@ -279,7 +295,8 @@ function csrfMeta(): string {
  *
  * Returns true on success, false on any failure.
  */
-function _csrfValidateToken(string $submitted): bool {
+function _csrfValidateToken(string $submitted): bool
+{
     _csrfAssertSession();
 
     // Fail safely if secret or submitted value is missing.
@@ -309,7 +326,7 @@ function _csrfValidateToken(string $submitted): bool {
     }
 
     // ── Step 2: Search the pool for a matching, non-expired entry ────────────
-    $now          = time();
+    $now = time();
     $matchedIndex = null;
 
     foreach ($pool as $i => $entry) {
@@ -318,7 +335,7 @@ function _csrfValidateToken(string $submitted): bool {
         }
 
         // Skip expired tokens.
-        if (($now - (int) $entry['created_at']) > CSRF_MAX_AGE) {
+        if (($now - (int)$entry['created_at']) > CSRF_MAX_AGE) {
             continue;
         }
 
@@ -348,7 +365,8 @@ function _csrfValidateToken(string $submitted): bool {
  * Dies with 403 on failure. On success the consumed token is removed from the
  * pool by _csrfValidateToken() — no separate rotation step needed.
  */
-function verifyCsrf(): void {
+function verifyCsrf(): void
+{
     // Only enforce on state-changing methods
     $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? '');
     if (!in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
@@ -366,7 +384,7 @@ function verifyCsrf(): void {
         _csrfFail('form_token_invalid');
     }
 
-    // Token already consumed (removed from pool) by _csrfValidateToken().
+// Token already consumed (removed from pool) by _csrfValidateToken().
 }
 
 /**
@@ -380,7 +398,8 @@ function verifyCsrf(): void {
  * Dies with 403 on failure. On success the consumed token is removed from the
  * pool by _csrfValidateToken().
  */
-function verifyCsrfAjax(): void {
+function verifyCsrfAjax(): void
+{
     $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? '');
     if (!in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
         return;
@@ -398,7 +417,7 @@ function verifyCsrfAjax(): void {
         _csrfFail('ajax_token_invalid');
     }
 
-    // Token already consumed (removed from pool) by _csrfValidateToken().
+// Token already consumed (removed from pool) by _csrfValidateToken().
 }
 
 /**
@@ -418,10 +437,12 @@ function verifyCsrfAjax(): void {
  *
  * @param string $mode  'form' | 'ajax'
  */
-function verifyCsrfAuto(string $mode = 'form'): void {
+function verifyCsrfAuto(string $mode = 'form'): void
+{
     if ($mode === 'ajax') {
         verifyCsrfAjax();
-    } else {
+    }
+    else {
         verifyCsrf();
     }
 }
