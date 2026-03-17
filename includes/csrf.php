@@ -46,9 +46,11 @@ function _csrfFail(string $reason): never
 
     http_response_code(403);
 
-    // Log failure if logger is already loaded (avoid circular dependency)
-    if (function_exists('logActivity')) {
-        // Sanitize reason before logging to prevent log injection
+    // Log failure with forensic context if logger is loaded
+    if (function_exists('logSecurityEvent')) {
+        $safeReason = preg_replace('/[^\w\s_\-]/', '', $reason);
+        logSecurityEvent(LOG_CSRF_FAIL, $safeReason);
+    } elseif (function_exists('logActivity')) {
         $safeReason = preg_replace('/[^\w\s_\-]/', '', $reason);
         logActivity('CSRF_FAIL:' . $safeReason);
     }
