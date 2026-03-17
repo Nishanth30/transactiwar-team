@@ -35,7 +35,7 @@ require_once __DIR__ . '/../includes/profile_view_logic.php';
                                 <div class="card-body">
                                     <h6 class="text-cyan text-uppercase small fw-bold mb-2">Bio</h6>
                                     <p class="mb-0 tw-lh-relaxed">
-                                        <?= nl2br($profileData['bio']) ?>
+                                        <?= nl2br($profileData['bio'], false) ?>
                                     </p>
                                 </div>
                             </div>
@@ -63,7 +63,7 @@ require_once __DIR__ . '/../includes/profile_view_logic.php';
                         <div class="card-body">
                             <h6 class="text-cyan text-uppercase small fw-bold mb-2">Bio</h6>
                             <p class="mb-0 tw-lh-relaxed">
-                                <?= nl2br($profileData['bio']) ?>
+                                <?= nl2br($profileData['bio'], false) ?>
                             </p>
                         </div>
                     </div>
