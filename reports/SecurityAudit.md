@@ -1,113 +1,83 @@
-# Security Hardening Review & War-Game Preparation Plan
+# Security Audit & Hardening Report: Transactiwar
 
-## Objective
-Perform a comprehensive security hardening review of the Transactiwar PHP + MySQL application. The goal is to identify vulnerabilities and weak security practices and provide concrete, actionable fixes without introducing external frameworks or breaking existing functionality.
+## Overview
+A comprehensive security review of the Transactiwar PHP + MySQL application was performed. The application demonstrates a very strong baseline security posture, with robust mitigations already in place for SQL Injection (PDO prepared statements), Cross-Site Scripting (rigorous output encoding and CSP), Cross-Site Request Forgery (session-bound token pooling), and Race Conditions (deadlock-free `SELECT ... FOR UPDATE` locking).
+
+However, several architectural misconfigurations and logic flaws remain that could be exploited during a war-game scenario, primarily leading to Denial of Service (DoS) and potential Remote Code Execution (RCE) via infrastructure misconfiguration.
 
 ---
 
 ## 🚨 Prioritized Hardening Checklist
 
-### 1. CRITICAL: Application Denial of Service (DoS) via Thread Exhaustion
-- **Severity:** CRITICAL
-- **File/Location:** `includes/auth.php` (functions `login_user` and `change_password_for_user`)
-- **Attack Scenario:** The authentication rate-limiting logic relies on `usleep(...)` to throttle brute-force attempts. Because PHP (via Apache mod_php or PHP-FPM) uses a fixed pool of worker processes, an attacker can intentionally trigger the lockout and keep multiple connection requests open. By sending a concurrent burst of requests to locked endpoints, the attacker will force all PHP workers to sleep simultaneously, causing a complete Denial of Service for the entire application.
-- **Exact Fix:** Remove all `usleep(...)` calls. Rate limiting should immediately reject the request without blocking the thread.
-  - In `includes/auth.php`, delete `usleep(...)` statements in both the `login_user` and `change_password_for_user` functions.
-  - Modify the logic to immediately return `'locked'` (yielding an HTTP 429 or generic error) when the attempt count crosses the rate limit threshold.
+### CRITICAL: Docker Misconfiguration (RCE Vector)
+*   **Vulnerability**: Insecure Apache `AllowOverride` Configuration
+*   **Location**: `docker/apache/default-ssl.conf`
+*   **Scenario**: The Apache configuration explicitly permits `Options=ExecCGI` within the `AllowOverride` directive (`AllowOverride FileInfo AuthConfig Options=ExecCGI,Indexes`). If an attacker finds any path to upload an `.htaccess` file (even if uploaded as a seemingly harmless file type and renamed, or via a new bypass in the upload logic), they can enable CGI execution for image files or other extensions, leading to full Remote Code Execution (RCE).
+*   **Exact Fix**:
+    Modify the `AllowOverride` directive to remove `ExecCGI`.
+    Change line 16 from:
+    ```apache
+    AllowOverride FileInfo AuthConfig Options=ExecCGI,Indexes
+    ```
+    To:
+    ```apache
+    AllowOverride FileInfo AuthConfig Options=Indexes
+    ```
 
-### 2. HIGH: Rate Limiting Bypass / DoS via Trusted Proxy IP Mishandling
-- **Severity:** HIGH
-- **File/Location:** `includes/request.php` (function `get_request_client_ip()`)
-- **Attack Scenario:** The `get_request_client_ip()` function explicitly returns `$_SERVER['REMOTE_ADDR']` and completely ignores `HTTP_X_FORWARDED_FOR`. If the application is deployed behind a reverse proxy or load balancer (e.g., Docker ingress, Nginx, Cloudflare), all incoming traffic will appear to originate from the proxy's IP. If a single user triggers the brute-force lockout threshold, the proxy's IP gets blacklisted in the `login_attempts` table, inadvertently blocking *all legitimate users* from logging in.
-- **Exact Fix:** Modify `get_request_client_ip()` to conditionally extract the real IP if the request originates from a trusted proxy.
-  ```php
-  function get_request_client_ip(): string
-  {
-      if (is_request_from_trusted_proxy() && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-          $forwarded = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-          $ip = trim(end($forwarded));
-          if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
-              return $ip;
-          }
-      }
-      $remoteAddr = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
-      if (filter_var($remoteAddr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
-          return $remoteAddr;
-      }
-      return '0.0.0.0';
-  }
-  ```
+### HIGH: Improper IP Validation leading to Global Denial of Service (DoS)
+*   **Vulnerability**: Proxy IP Trust Failure causing Rate-Limiting Collisions
+*   **Location**: `includes/request.php` (in `get_request_client_ip()`)
+*   **Scenario**: The application is designed to run behind a proxy (e.g., Docker ingress, Nginx) as indicated by `TRUSTED_PROXIES`. However, `get_request_client_ip()` strictly returns `$_SERVER['REMOTE_ADDR']`. Because all traffic routes through the proxy, `REMOTE_ADDR` will be the proxy's IP. All users will share the same IP address. If an attacker intentionally triggers the login or registration rate-limit (e.g., `MAX_LOGIN_FAILS`), **every user on the platform will be locked out**, resulting in a catastrophic global DoS.
+*   **Exact Fix**:
+    Update the IP resolution logic to trust the `X-Forwarded-For` header if the request originates from a trusted proxy.
+    ```php
+    function get_request_client_ip(): string
+    {
+        if (is_request_from_trusted_proxy() && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+            $realIp = trim($ips[0]);
+            if (filter_var($realIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+                return $realIp;
+            }
+        }
 
-### 3. HIGH: Docker Misconfiguration (Container running as Root)
-- **Severity:** HIGH
-- **File/Location:** `docker/Dockerfile`
-- **Attack Scenario:** The `php:8.2-apache` image runs the main Apache process and the container context as the `root` user. Although Apache worker threads drop privileges to `www-data` during request handling, any severe vulnerability resulting in Remote Code Execution (RCE) or misconfiguration could be leveraged to execute commands as `root` inside the container. This makes a container escape to the host system significantly easier.
-- **Exact Fix:** Ensure the container runs entirely as a non-root user. Because binding to ports below 1024 requires root privileges, change the Apache ports to 8080/8443, adjust the Docker configuration, and drop privileges in the Dockerfile.
-  - In `docker/Dockerfile`: Add `USER www-data` immediately before the `ENTRYPOINT` instruction.
-  - In `docker/apache/000-default.conf` and `docker/apache/default-ssl.conf`: Update `<VirtualHost *:80>` to `<VirtualHost *:8080>` and `<VirtualHost *:443>` to `<VirtualHost *:8443>`. You must also update `ports.conf` inside the image to `Listen 8080` and `Listen 8443`.
-  - In `docker/docker-compose.yml`: Update ports mapping to `- "${APP_BIND:-0.0.0.0}:80:8080"` and `- "${APP_BIND:-0.0.0.0}:443:8443"`.
+        $remoteAddr = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+        if (filter_var($remoteAddr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+            return $remoteAddr;
+        }
 
-### 4. MEDIUM: Web Cache Poisoning / Open Redirect via Host Header Injection
-- **Severity:** MEDIUM
-- **File/Location:** `includes/request.php` (function `enforce_https()`)
-- **Attack Scenario:** The `enforce_https()` function builds a 301 redirect URL using `get_request_host()`, which reflects the user-supplied `HTTP_HOST` header. It then executes `exit;` immediately without setting `Cache-Control` headers. An attacker can send an HTTP request with `Host: attacker.com`, and the server will reply with a `301 Redirect` to `https://attacker.com/`. If a CDN or caching proxy is in front of the application, it might cache this response, automatically redirecting subsequent legitimate HTTP visitors to the attacker's domain.
-- **Exact Fix:** Add `Cache-Control` headers before the redirect exits to mitigate caching of poisoned host headers.
-  ```php
-  function enforce_https(): void
-  {
-      if (!should_enforce_https() || is_secure_request()) {
-          return;
-      }
-      $url = 'https://' . get_https_redirect_host() . ($_SERVER['REQUEST_URI'] ?? '/');
-      $url = preg_replace('/[\r\n]/', '', $url ?? '');
+        return '0.0.0.0';
+    }
+    ```
 
-      header('HTTP/1.1 301 Moved Permanently');
-      header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0'); // Explicit cache prevention
-      header('Location: ' . $url);
-      exit;
-  }
-  ```
+### MEDIUM: Database CPU Exhaustion (DoS)
+*   **Vulnerability**: Uncapped Pagination Offsets
+*   **Location**: `public/transaction_history.php`
+*   **Scenario**: The transaction history page accepts a user-controlled `page` parameter to calculate the SQL `OFFSET`. An attacker can write a script to repeatedly request extremely high page numbers (e.g., `?page=999999999`). High-offset queries force MySQL to scan and discard millions of rows per request, rapidly exhausting database CPU and memory.
+*   **Exact Fix**:
+    Cap the maximum allowed page number or offset.
+    Change line 23:
+    ```php
+    $rawPage = get_int('page');
+    $page = ($rawPage !== null && $rawPage > 0) ? $rawPage : 1;
+    // Add a hard cap to the page number
+    if ($page > 1000) { $page = 1000; }
+    $offset = ($page - 1) * $perPage;
+    ```
 
-### 5. MEDIUM: Lack of Maximum Length Constraint on Login Password
-- **Severity:** MEDIUM
-- **File/Location:** `public/login.php`
-- **Attack Scenario:** In `public/login.php`, the raw `$_POST['password']` is accepted without a maximum length constraint and passed directly to authentication functions. While `password_verify()` naturally mitigates CPU DoS by silently truncating bcrypt inputs to 72 bytes, allocating extremely large strings in memory for every login attempt can be weaponized by an attacker to cause an application-level Denial of Service via memory exhaustion (`Allowed memory size of X bytes exhausted`).
-- **Exact Fix:** Enforce a maximum length validation on the password input in `login.php` prior to any string processing or DB lookups.
-  ```php
-  $password = (string) ($_POST['password'] ?? '');
-  if (strlen($password) > 1024) { // Reject absurdly large payloads immediately
-      $_SESSION['flash_error'] = 'Invalid credentials.';
-      logActivity(LOG_INVALID_INPUT);
-      header('Location: /login.php');
-      exit;
-  }
-  ```
-
-### 6. LOW: Security Header Conflict (Broken Functionality & Unsafe Inline)
-- **Severity:** LOW (Primarily functional, but weakens CSS security)
-- **File/Location:** `public/.htaccess` and `includes/header.php`
-- **Attack Scenario:** The PHP layer (`includes/header.php`) dynamically generates a strict, nonce-based Content-Security-Policy (CSP) header. However, `public/.htaccess` *also* statically injects a secondary CSP header (`script-src 'self'; style-src 'self' 'unsafe-inline';`). Browsers combine multiple CSPs using strict intersection logic. Because the `.htaccess` CSP lacks the nonce and `strict-dynamic`, all valid inline scripts (such as the transfer confirmation modal in `payment_page.php`) will be blocked by the browser. Additionally, it needlessly allows `'unsafe-inline'` for styles.
-- **Exact Fix:** Remove the static `Header always set Content-Security-Policy ...` directive entirely from `public/.htaccess` and rely exclusively on the dynamically generated CSP from the PHP application logic.
-
-### 7. LOW: Weak Practice - PDO Statement Emulation Enabled
-- **Severity:** LOW
-- **File/Location:** `config/db.php`
-- **Attack Scenario:** The PDO `ATTR_EMULATE_PREPARES` attribute is not explicitly disabled. By default in many environments, PDO emulates prepared statements for MySQL, simulating parameter binding rather than using native MySQL prepared statements at the server level. While the `charset=utf8mb4` DSN configuration mitigates classical character-encoding bypasses, leaving emulation enabled technically allows multiple statements to be executed in a single query (e.g., `value; DROP TABLE users;`) if a secondary flaw is ever discovered.
-- **Exact Fix:** Explicitly disable statement emulation to ensure true, native prepared statements are strictly utilized.
-  ```php
-  $options = [
-      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-      PDO::ATTR_EMULATE_PREPARES => false, // Ensure native prepares are used
-  ];
-  ```
+### LOW: Docker Secrets Misconfiguration
+*   **Vulnerability**: Credentials Exposed in Environment
+*   **Location**: `docker/docker-compose.yml`
+*   **Scenario**: The MySQL database credentials (`MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`) are passed as plaintext environment variables. Any user or process with access to the Docker daemon can view these credentials via `docker inspect`.
+*   **Exact Fix**:
+    Migrate from standard environment variables to Docker Secrets. Update `docker-compose.yml` to define secrets and use the `MYSQL_ROOT_PASSWORD_FILE` and `MYSQL_PASSWORD_FILE` environment variables.
 
 ---
 
-## 🛡️ Summary of Validated Defenses (No Action Needed)
-During the review, several critical security features were closely analyzed and confirmed to be securely implemented. These areas require no changes and demonstrate strong defensive postures:
-- **Race Conditions in Transfers:** Fully mitigated. The logic in `includes/process_payment.php` correctly enforces ordered ID-locking (`SELECT ... FOR UPDATE` starting with the lowest ID) inside the database transaction. This guarantees deadlock-free execution and absolutely prevents concurrent TOCTOU double-spend exploits.
-- **File Uploads:** Highly secure. `includes/profile_update_logic.php` successfully checks MIME types using `finfo`, enforces out-of-webroot storage (`../storage/uploads/`), effectively sanitizes filenames (`sanitize_filename()`), and crucially relies on GD Library regeneration (`imagejpeg`, etc.) to strip entirely embedded payloads.
-- **Cross-Site Scripting (XSS):** Handled uniformly and robustly via strict HTML entity encoding (`escape_output()`) and DOM injection guards throughout rendering scripts.
-- **Cross-Site Request Forgery (CSRF):** Successfully guarded via strict constant-time HMAC token comparisons and HTTP Origin/Referer checks in `includes/csrf.php`.
-- **Insecure Direct Object Reference (IDOR):** All sensitive queries and updates strictly leverage the active session's `user_id`, enforcing proper ownership and preventing parameter manipulation attacks.
+## 🛡️ Summary of Verified Defenses (Do Not Alter)
+During the audit, the following security controls were verified as **highly effective** and should remain untouched:
+1.  **Race Conditions in Money Transfer**: Mitigated flawlessly in `includes/process_payment.php` using globally ordered `SELECT ... FOR UPDATE` row locking to prevent deadlocks and TOCTOU vulnerabilities.
+2.  **Insecure File Uploads**: `includes/profile_update_logic.php` successfully validates the MIME type, enforces a size limit, uses `getimagesize()` *before* GD processing, and utilizes GD rendering functions (`imagepng`) to neuter PHP polyglot payloads.
+3.  **SQL Injection**: 100% PDO prepared statements across the application.
+4.  **XSS**: `escape_output()` correctly escapes HTML entities including quotes and null bytes. Strict Content-Security-Policy (CSP) with nounces prevents inline script execution.
+5.  **CSRF**: A robust token pool restricts tab collisions, binds HMAC signatures to the session, and enforces strict origin checks.
