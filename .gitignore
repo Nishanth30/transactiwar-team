@@ -8,3 +8,5 @@ docker/certs/*.csr
 *.pdf
 transactiwar-vm_key.pem
 storage/logs/*.log
+.qwen/agents/accessibility-auditor.md
+/.qwen
