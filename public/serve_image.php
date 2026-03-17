@@ -70,7 +70,7 @@ if (!array_key_exists($mimeType, $allowedMimes)) {
 }
 
 send_asset_headers($mimeType);
-header('Content-Disposition: inline; filename="' . $filename . '"');
+header('Content-Disposition: inline; filename="' . str_replace(['"', "\r", "\n"], '', $filename) . '"');
 header('Cache-Control: private, max-age=3600');
 header('Content-Length: ' . filesize($realFile));
 
