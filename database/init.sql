@@ -49,7 +49,8 @@ CREATE TABLE activity_logs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NULL,                              -- NULL for unauthenticated events
     username_snapshot VARCHAR(32) CHARACTER SET ascii COLLATE ascii_general_ci NULL,
-    webpage VARCHAR(255) NOT NULL,
+    webpage VARCHAR(255) NOT NULL,                          -- event type (indexable classifier)
+    detail TEXT NULL,                                       -- full forensic payload (attack strings, context)
     client_ip VARCHAR(45) NOT NULL,                         -- IPv4/IPv6
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -75,7 +76,18 @@ BEGIN
 END//
 DELIMITER ;
 
--- 5) IP-based login rate limiting
+-- 5) IP Firewall — team-managed blocklist
+CREATE TABLE blocked_ips (
+    ip           VARCHAR(45)  NOT NULL,
+    reason       VARCHAR(255) NOT NULL DEFAULT 'manual block',
+    blocked_by   VARCHAR(32)  NOT NULL DEFAULT 'system',
+    blocked_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at   TIMESTAMP    NULL DEFAULT NULL,              -- NULL = permanent
+
+    PRIMARY KEY (ip)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- 6) IP-based login rate limiting
 CREATE TABLE login_attempts (
     ip           VARCHAR(45)  NOT NULL,
     attempts     INT UNSIGNED NOT NULL DEFAULT 0,
