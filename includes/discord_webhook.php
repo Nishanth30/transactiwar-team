@@ -40,7 +40,11 @@ function _getAlertConfig(): array {
         'XSS_PROBE_DETECTED'      => ['severity' => 'CRITICAL', 'color' => 0xFF0000, 'emoji' => "\xF0\x9F\x9A\xA8"],
         'PATH_TRAVERSAL_DETECTED' => ['severity' => 'CRITICAL', 'color' => 0xFF0000, 'emoji' => "\xF0\x9F\x9A\xA8"],
 
+        // ── BLOCKED (purple) — firewall action taken ──────────────
+        'IP_BLOCKED'              => ['severity' => 'BLOCKED',  'color' => 0x9B59B6, 'emoji' => "\xF0\x9F\x9B\x91"],
+
         // ── HIGH (orange) — investigate soon ────────────────────
+        'CSP_VIOLATION'           => ['severity' => 'HIGH',     'color' => 0xFF8C00, 'emoji' => "\xE2\x9A\xA0\xEF\xB8\x8F"],
         'CSRF_FAIL'               => ['severity' => 'HIGH',     'color' => 0xFF8C00, 'emoji' => "\xE2\x9A\xA0\xEF\xB8\x8F"],
         'TRANSFER_FAIL'           => ['severity' => 'HIGH',     'color' => 0xFF8C00, 'emoji' => "\xE2\x9A\xA0\xEF\xB8\x8F"],
         'TRANSFER_INVALID'        => ['severity' => 'HIGH',     'color' => 0xFF8C00, 'emoji' => "\xE2\x9A\xA0\xEF\xB8\x8F"],
@@ -172,18 +176,53 @@ function _buildDiscordEmbed(
             'inline' => true,
         ],
         [
-            'name'   => 'Timestamp',
-            'value'  => '`' . gmdate('Y-m-d H:i:s') . ' UTC`',
+            'name'   => 'Timestamp (IST)',
+            'value'  => '`' . gmdate('Y-m-d H:i:s', time() + 19800) . ' IST`',
             'inline' => true,
         ],
     ];
 
     if ($detail !== '') {
-        $fields[] = [
-            'name'   => 'Detail',
-            'value'  => '```' . substr($detail, 0, 500) . '```',
-            'inline' => false,
-        ];
+        // Split detail on pipe separators into reason + request context
+        $detailParts = array_map('trim', explode('|', $detail));
+        $reason = $detailParts[0] ?? '';
+
+        // Build structured request info from remaining parts
+        $requestLines = [];
+        for ($i = 1; $i < count($detailParts); $i++) {
+            $part = trim($detailParts[$i]);
+            if ($part === '') continue;
+
+            // Format key=value parts nicely
+            if (str_starts_with($part, 'origin=')) {
+                $requestLines[] = "\xF0\x9F\x8C\x90 **Origin:** `" . substr($part, 7) . '`';
+            } elseif (str_starts_with($part, 'ref=')) {
+                $requestLines[] = "\xF0\x9F\x94\x97 **Referer:** `" . substr($part, 4) . '`';
+            } elseif (str_starts_with($part, 'ua=')) {
+                $requestLines[] = "\xF0\x9F\x96\xA5\xEF\xB8\x8F **User-Agent:** `" . substr($part, 3) . '`';
+            } elseif (preg_match('/^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE)\s/', $part)) {
+                $requestLines[] = "\xF0\x9F\x93\xA1 **Request:** `" . $part . '`';
+            } else {
+                $requestLines[] = '`' . $part . '`';
+            }
+        }
+
+        if ($reason !== '') {
+            // Make reason human-readable: underscores to spaces, title case
+            $prettyReason = ucwords(str_replace('_', ' ', $reason));
+            $fields[] = [
+                'name'   => 'Reason',
+                'value'  => $prettyReason,
+                'inline' => false,
+            ];
+        }
+        if (!empty($requestLines)) {
+            $fields[] = [
+                'name'   => 'Request Details',
+                'value'  => implode("\n", $requestLines),
+                'inline' => false,
+            ];
+        }
     }
 
     return [
