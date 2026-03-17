@@ -74,7 +74,7 @@ function escape_output(mixed $value): string
  *
  * Usage:
  *   <script>
- *     var username = "<?= escape_js($username) ?>";
+ *     var username = <?= escape_js($username) ?>;
  *   </script>
  */
 function escape_js(mixed $value): string
