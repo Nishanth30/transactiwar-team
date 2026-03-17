@@ -3,6 +3,12 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/request.php';
+require_once __DIR__ . '/ai_traps.php';
+
+// IP Firewall — must run before any page content.
+// Blocks IPs that the team has put on cooldown/ban via the firewall CLI.
+require_once __DIR__ . '/ip_firewall.php';
+checkIpFirewall();
 
 define('HSTS_MAX_AGE', 31536000);
 define('CSP_NONCE_BYTES', 16);
@@ -38,6 +44,9 @@ function build_csp(string $nonce): string
         $directives[] = 'upgrade-insecure-requests';
         $directives[] = 'block-all-mixed-content';
     }
+
+    // CSP violation reporting — see what XSS attempts the CSP blocks
+    $directives[] = "report-uri /csp-report.php";
 
     return implode('; ', $directives);
 }
@@ -209,6 +218,8 @@ function debug_headers(): void
 
 function render_page_head(string $title, string $extraHead = ''): void
 {
+    // AI anti-exploitation traps in <head>
+    echo aiTrapHead();
     $safeTitle = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     echo '<meta charset="UTF-8">' . PHP_EOL;
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">' . PHP_EOL;
