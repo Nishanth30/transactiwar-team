@@ -35,6 +35,10 @@ try {
     $total = (int) $countStmt->fetchColumn();
     $totalPages = max(1, (int) ceil($total / $perPage));
 
+    // Clamp page to actual range — avoids pointless large-OFFSET queries
+    $page = min($page, $totalPages);
+    $offset = ($page - 1) * $perPage;
+
     $stmt = $pdo->prepare(
         'SELECT
             t.id,
