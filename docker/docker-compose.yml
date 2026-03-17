@@ -104,6 +104,7 @@ services:
       CSRF_ALLOWED_ORIGIN: ${CSRF_ALLOWED_ORIGIN:-https://localhost}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       ENFORCE_HTTPS: ${ENFORCE_HTTPS:-1}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       GENERATE_SELF_SIGNED_TLS: ${GENERATE_SELF_SIGNED_TLS:-1}
       TLS_CERT_FILE: /etc/apache2/ssl/server.crt
       TLS_KEY_FILE: /etc/apache2/ssl/server.key

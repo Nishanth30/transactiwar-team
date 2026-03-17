@@ -121,6 +121,11 @@ function logActivity(string $event): void {
         // ── Try DB first ─────────────────────────────────────────
         _logToDatabase($userId, $username, $event, $ip);
 
+        // ── Discord alert for security events ────────────────────
+        if (function_exists('discordAlert')) {
+            discordAlert($event, $username, $ip);
+        }
+
     } catch (Throwable $e) {
         // Never throw into business flow.
         // Fallback to syslog so events survive a DB outage and appear in docker logs.
@@ -925,3 +930,15 @@ function renderMonitorDashboard(): void {
     </html>
     <?php
 }
+
+
+// ══════════════════════════════════════════════════════════════════
+//  SECTION 7 — DISCORD WEBHOOK INTEGRATION
+//  Auto-loads if the file exists. No-op if missing or unconfigured.
+// ══════════════════════════════════════════════════════════════════
+
+$_discordWebhookPath = __DIR__ . '/discord_webhook.php';
+if (is_file($_discordWebhookPath)) {
+    require_once $_discordWebhookPath;
+}
+unset($_discordWebhookPath);
