@@ -96,7 +96,7 @@ define('LOG_SESSION_HIJACK',    'SESSION_HIJACK_DETECTED');
  *   logActivity(LOG_TRANSFER_FAIL);
  *   logActivity(LOG_CSRF_FAIL);
  */
-function logActivity(string $event): void {
+function logActivity(string $event, ?string $detail = null): void {
     try {
         // ── Collect data ─────────────────────────────────────────
 
@@ -105,9 +105,19 @@ function logActivity(string $event): void {
         $username = $_SESSION['username'] ?? null;
 
         // Sanitize event string — prevent log injection
-        // Only allow word chars, underscores, hyphens, colons
-        $event = preg_replace('/[^\w\-:.]/', '', $event);
+        // Allow word chars plus forensic context chars (spaces, pipes, slashes,
+        // equals, colons, dots, parens, commas) but strip control chars and
+        // anything that could break DB or log parsers.
+        $event = preg_replace('/[^\w\-:. |\/=@,()<>]/', '', $event);
         $event = substr($event, 0, 255);
+
+        // Sanitize detail — preserve printable ASCII for forensics
+        if ($detail !== null) {
+            $detail = preg_replace_callback('/[^\x20-\x7E]/', static function (array $m): string {
+                return '\\x' . bin2hex($m[0]);
+            }, $detail);
+            $detail = substr($detail, 0, 2000);
+        }
 
         // Sanitize username snapshot
         if ($username !== null) {
@@ -119,11 +129,13 @@ function logActivity(string $event): void {
         $ip = _getLogIp();
 
         // ── Try DB first ─────────────────────────────────────────
-        _logToDatabase($userId, $username, $event, $ip);
+        _logToDatabase($userId, $username, $event, $ip, $detail);
 
         // ── Discord alert for security events ────────────────────
         if (function_exists('discordAlert')) {
-            discordAlert($event, $username, $ip);
+            // Pass detail for richer Discord embeds
+            $discordEvent = $detail !== null ? $event . ':' . $detail : $event;
+            discordAlert($discordEvent, $username, $ip);
         }
 
     } catch (Throwable $e) {
@@ -155,31 +167,62 @@ function logActivity(string $event): void {
 }
 
 /**
+ * Build a compact forensic context string from the current request.
+ * Captures URI, method, origin, and user-agent for security logs.
+ *
+ * Returns something like:
+ *   "POST /login.php origin=https://evil.com ua=curl/7.88"
+ */
+function _buildRequestContext(): string {
+    $parts = [];
+
+    $method = $_SERVER['REQUEST_METHOD'] ?? '?';
+    $uri    = $_SERVER['REQUEST_URI']    ?? '?';
+    // Truncate URI to avoid log bloat from long query strings
+    $uri = substr($uri, 0, 80);
+    $parts[] = $method . ' ' . $uri;
+
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if ($origin !== '') {
+        $parts[] = 'origin=' . substr($origin, 0, 60);
+    }
+
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';
+    if ($referer !== '' && $origin === '') {
+        $parts[] = 'ref=' . substr($referer, 0, 60);
+    }
+
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    if ($ua !== '') {
+        // Truncate UA to the product token (first space-delimited chunk)
+        $uaShort = explode(' ', $ua)[0];
+        $parts[] = 'ua=' . substr($uaShort, 0, 40);
+    }
+
+    return implode(' | ', $parts);
+}
+
+/**
  * Log a high-priority security event in DB.
  * Includes extra detail field for attack specifics.
+ * Automatically appends request context (URI, origin, UA) for forensics.
  *
  * Usage:
  *   logSecurityEvent(LOG_CSRF_FAIL, 'transfer.php POST');
  *   logSecurityEvent(LOG_BRUTE_FORCE, 'user: admin, attempts: 10');
  */
 function logSecurityEvent(string $event, string $detail = ''): void {
-    // M8 FIX: Preserve printable ASCII so forensic characters like < > = @ & "
-    // survive into the log. The old regex stripped them, making logged attack
-    // payloads (e.g. <script>alert(1)</script>) unreadable during investigation.
-    // Non-printable and non-ASCII bytes are hex-escaped to prevent log injection
-    // (newlines, null bytes, control chars, and multibyte sequences that could
-    // confuse log parsers or terminals).
-    $detail = preg_replace_callback('/[^\x20-\x7E]/', static function (array $m): string {
-        return '\\x' . bin2hex($m[0]);
-    }, $detail);
-    $detail = substr($detail, 0, 200);
+    // Auto-append request context for forensics
+    $ctx = _buildRequestContext();
+    if ($detail !== '') {
+        $fullDetail = $detail . ' | ' . $ctx;
+    } else {
+        $fullDetail = $ctx;
+    }
 
-    $fullEvent = $detail !== ''
-        ? $event . ':' . $detail
-        : $event;
-
-    // Security events are DB-backed like all other activity logs.
-    logActivity($fullEvent);
+    // Security events store the full detail in the dedicated column
+    // while keeping the event type clean and indexable in webpage.
+    logActivity($event, $fullDetail);
 }
 
 
@@ -197,28 +240,40 @@ function _logToDatabase(
     ?int    $userId,
     ?string $username,
     string  $event,
-    string  $ip
+    string  $ip,
+    ?string $detail = null
 ): void {
     $pdo = _getLoggerPdo();
     $userId = ($userId !== null && $userId > 0) ? $userId : null;
 
     $stmt = $pdo->prepare(
         'INSERT INTO activity_logs
-            (user_id, username_snapshot, webpage, client_ip)
+            (user_id, username_snapshot, webpage, detail, client_ip)
          VALUES
-            (?, ?, ?, ?)'
+            (?, ?, ?, ?, ?)'
     );
 
     try {
         $stmt->execute([
             $userId,    // NULL for guests
             $username,  // NULL for guests
-            $event,     // event type
+            $event,     // event type (clean, indexable)
+            $detail,    // full forensic payload (NULL for non-security events)
             $ip,        // client IP
         ]);
     } catch (PDOException $e) {
         $isForeignKeyError = $e->getCode() === '23000';
         if (!$isForeignKeyError) {
+            // If the detail column doesn't exist yet (old schema), retry without it
+            if (str_contains($e->getMessage(), 'detail')) {
+                $stmtFallback = $pdo->prepare(
+                    'INSERT INTO activity_logs
+                        (user_id, username_snapshot, webpage, client_ip)
+                     VALUES (?, ?, ?, ?)'
+                );
+                $stmtFallback->execute([$userId, $username, $event, $ip]);
+                return;
+            }
             throw $e;
         }
 
@@ -228,6 +283,7 @@ function _logToDatabase(
             null,
             $username,
             $event,
+            $detail,
             $ip,
         ]);
     }
