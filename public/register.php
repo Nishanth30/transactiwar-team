@@ -32,6 +32,13 @@ if (isset($_SESSION['user_id'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrf();
 
+    // Honeypot — bots fill the invisible field, humans don't
+    if (aiTrapTriggered()) {
+        $_SESSION['flash_error'] = 'Registration failed.';
+        header('Location: /register.php');
+        exit;
+    }
+
     // M5 FIX: Rate-limit registration by IP before any expensive work
     // (validation, bcrypt hashing, DB insert). Prevents enumeration,
     // spam account creation, and CPU exhaustion via bcrypt.
@@ -125,6 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <form method="POST" action="/register.php">
                         <?= csrfField() ?>
+                        <?= aiTrapForm() ?>
 
                         <div class="mb-3">
                             <label for="username" class="form-label">Username</label>

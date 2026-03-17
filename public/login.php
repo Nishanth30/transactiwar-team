@@ -35,6 +35,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Enforce anti-CSRF check before reading credentials.
     verifyCsrf();
 
+    // Honeypot — bots fill the invisible field, humans don't
+    if (aiTrapTriggered()) {
+        // Silently redirect — don't reveal detection to the bot
+        $_SESSION['flash_error'] = 'Invalid credentials.';
+        header('Location: /login.php');
+        exit;
+    }
+
     $usernameOrEmail = post_str('identifier');
     $password = (string) ($_POST['password'] ?? '');
     $flashError = '';
@@ -108,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
                     <form method="POST" action="/login.php">
                         <?= csrfField() ?>
+                        <?= aiTrapForm() ?>
 
                         <div class="mb-3">
                             <label for="identifier" class="form-label">Username or Email</label>
