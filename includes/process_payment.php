@@ -16,7 +16,7 @@ $nonceKey       = 'transfer_nonce_' . ($nonceTargetId ?? '');
 
 if (!$nonce || !isset($_SESSION[$nonceKey]) ||
     !hash_equals($_SESSION[$nonceKey], $nonce)) {
-    logActivity(LOG_TRANSFER_INVALID);
+    logSecurityEvent(LOG_TRANSFER_INVALID, 'nonce_mismatch');
     $_SESSION['transfer_error'] = "Invalid or expired transfer session.";
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
@@ -30,7 +30,7 @@ $submittedPageLoadId = post_str('page_load_id');
 if (!$submittedPageLoadId ||
     !isset($_SESSION[$pageLoadKey]) ||
     !hash_equals($_SESSION[$pageLoadKey], $submittedPageLoadId)) {
-    logActivity(LOG_TRANSFER_INVALID);
+    logSecurityEvent(LOG_TRANSFER_INVALID, 'page_load_id_mismatch');
     $_SESSION['transfer_error'] = "Invalid or expired page session.";
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
@@ -60,7 +60,7 @@ $raw_rupees = post_str('amount');
 // This blocks "1e3", "1,000", "-1", " 1" and other bypass attempts
 // before we do any arithmetic on the value.
 if (!preg_match('/^\d+(\.\d{1,2})?$/', $raw_rupees)) {
-    logActivity(LOG_TRANSFER_INVALID);
+    logSecurityEvent(LOG_TRANSFER_INVALID, 'bad_amount_format:' . substr($raw_rupees, 0, 30));
     $_SESSION['transfer_error'] = "Invalid amount format.";
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
@@ -72,7 +72,7 @@ $amount_paise = sanitize_amount((string) round((float)$raw_rupees * 100));
 
 // ── Early-exit guards ────────────────────────────────────────────
 if ($amount_paise === null) {
-    logActivity(LOG_TRANSFER_INVALID);
+    logSecurityEvent(LOG_TRANSFER_INVALID, 'amount_out_of_range:' . substr($raw_rupees, 0, 30));
     $_SESSION['transfer_error'] = "Transfer amount must be between ₹1.00 and ₹10,00,000.00.";
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
@@ -80,7 +80,7 @@ if ($amount_paise === null) {
 
 if ($target_uuid === null) {
     // Covers both missing and malformed UUIDs.
-    logActivity(LOG_TRANSFER_INVALID);
+    logSecurityEvent(LOG_TRANSFER_INVALID, 'invalid_target_uuid');
     $_SESSION['transfer_error'] = "Invalid or missing receiver ID.";
     header("Location: " . sanitize_header("/transaction_result.php"));
     exit;
@@ -96,7 +96,7 @@ try {
     $receiver = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$receiver) {
-        logActivity(LOG_TRANSFER_INVALID);
+        logSecurityEvent(LOG_TRANSFER_INVALID, 'receiver_not_found:' . substr($target_uuid, 0, 36));
         $_SESSION['transfer_error'] = "Receiver does not exist.";
         header("Location: " . sanitize_header("/transaction_result.php"));
         exit;
@@ -106,7 +106,7 @@ try {
 
     // Strict integer equality — no type-juggling surprises.
     if ($receiver_id === $sender_id) {
-        logActivity(LOG_TRANSFER_INVALID);
+        logSecurityEvent(LOG_TRANSFER_INVALID, 'self_transfer_attempt');
         $_SESSION['transfer_error'] = "You cannot send money to yourself.";
         header("Location: " . sanitize_header("/transaction_result.php"));
         exit;
