@@ -45,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (strlen($usernameOrEmail) > MAX_EMAIL_LEN) {
         $flashError = 'Invalid credentials.';
         logActivity(LOG_INVALID_INPUT);
+    } elseif (strlen($password) > MAX_PASSWORD_LEN) {
+        $flashError = 'Invalid credentials.';
+        logActivity(LOG_INVALID_INPUT);
     } else {
         try {
             $success = login_user($pdo, $usernameOrEmail, $password);
@@ -115,7 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                         <div class="mb-3">
                             <label for="password" class="form-label">Password</label>
                             <input type="password" class="form-control" id="password"
-                                   name="password" required autocomplete="current-password">
+                                   name="password" required maxlength="<?= MAX_PASSWORD_LEN ?>"
+                                   autocomplete="current-password">
                         </div>
 
                         <button type="submit" class="btn btn-primary w-100 mt-2">Login</button>

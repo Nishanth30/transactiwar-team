@@ -706,6 +706,11 @@ function login_user(PDO $pdo, string $identifier, string $password): bool|string
         : sanitize_ip($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
     $identifier = trim($identifier);
 
+    if ($identifier === '' || strlen($password) > MAX_PASSWORD_LEN) {
+        usleep(random_int(LOGIN_DELAY_MIN_US, LOGIN_DELAY_MAX_US));
+        return false;
+    }
+
     if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
         $sql = "
             SELECT id, public_id, username, password_hash, session_version
