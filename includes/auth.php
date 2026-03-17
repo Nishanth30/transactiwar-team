@@ -989,7 +989,7 @@ function logout_user(): void
             'domain' => $params['domain'],
             'secure' => $params['secure'],
             'httponly' => $params['httponly'],
-            'samesite' => $params['samesite'] ?? 'Lax',
+            'samesite' => $params['samesite'] ?? 'Strict',
         ]
         );
     }
