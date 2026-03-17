@@ -58,7 +58,7 @@ Required values in `docker/.env`:
 - `CSRF_ALLOWED_ORIGIN`
 - `APP_DIAGNOSTIC_MODE`
 - `SESSION_SECRET`
-- `TRUSTED_PROXIES` (optional, comma-separated proxy IPs allowed to set `X-Forwarded-Proto`)
+- `TRUSTED_PROXIES` (optional, comma-separated proxy IPs allowed to set forwarded headers like `X-Forwarded-Proto` and `X-Forwarded-For`)
 - `ENFORCE_HTTPS`
 - `GENERATE_SELF_SIGNED_TLS`
 - `TLS_CERT_CN`

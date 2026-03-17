@@ -41,8 +41,43 @@ function is_request_from_trusted_proxy(): bool
     return in_array($remoteAddr, get_trusted_proxy_ips(), true);
 }
 
+function get_forwarded_client_ip(): ?string
+{
+    if (!is_request_from_trusted_proxy()) {
+        return null;
+    }
+
+    $forwardedFor = trim((string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
+    if ($forwardedFor === '') {
+        return null;
+    }
+
+    $trustedProxies = get_trusted_proxy_ips();
+    $forwardedIps = array_reverse(array_map('trim', explode(',', $forwardedFor)));
+
+    foreach ($forwardedIps as $candidate) {
+        if (
+            $candidate === ''
+            || !filter_var($candidate, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)
+        ) {
+            continue;
+        }
+
+        if (!in_array($candidate, $trustedProxies, true)) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
+
 function get_request_client_ip(): string
 {
+    $forwardedIp = get_forwarded_client_ip();
+    if ($forwardedIp !== null) {
+        return $forwardedIp;
+    }
+
     $remoteAddr = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
     if (filter_var($remoteAddr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
         return $remoteAddr;
