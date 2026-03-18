@@ -11,6 +11,7 @@ tls_cert_cn="${TLS_CERT_CN:-localhost}"
 tls_cert_san="${TLS_CERT_SAN:-DNS:localhost,IP:127.0.0.1,IP:::1}"
 tls_self_signed_days="${TLS_SELF_SIGNED_DAYS:-30}"
 generate_self_signed_tls="${GENERATE_SELF_SIGNED_TLS:-1}"
+tls_key_algorithm="${TLS_KEY_ALGORITHM:-ecdsa}"
 
 # Ensure TLS and storage directories exist with correct ownership.
 # Directories are pre-created in the Dockerfile, but bind-mounted volumes
@@ -36,16 +37,38 @@ if [ ! -s "$tls_cert_file" ] || [ ! -s "$tls_key_file" ]; then
     fi
 
     echo "[tls] Generating self-signed development certificate for ${tls_cert_cn}."
-    openssl req \
-        -x509 \
-        -newkey rsa:4096 \
-        -sha256 \
-        -nodes \
-        -days "$tls_self_signed_days" \
-        -subj "/CN=${tls_cert_cn}" \
-        -addext "subjectAltName = ${tls_cert_san}" \
-        -keyout "$tls_key_file" \
-        -out "$tls_cert_file"
+    case "$tls_key_algorithm" in
+        ecdsa)
+            openssl req \
+                -x509 \
+                -newkey ec \
+                -pkeyopt ec_paramgen_curve:prime256v1 \
+                -pkeyopt ec_param_enc:named_curve \
+                -sha256 \
+                -nodes \
+                -days "$tls_self_signed_days" \
+                -subj "/CN=${tls_cert_cn}" \
+                -addext "subjectAltName = ${tls_cert_san}" \
+                -keyout "$tls_key_file" \
+                -out "$tls_cert_file"
+            ;;
+        rsa)
+            openssl req \
+                -x509 \
+                -newkey rsa:4096 \
+                -sha256 \
+                -nodes \
+                -days "$tls_self_signed_days" \
+                -subj "/CN=${tls_cert_cn}" \
+                -addext "subjectAltName = ${tls_cert_san}" \
+                -keyout "$tls_key_file" \
+                -out "$tls_cert_file"
+            ;;
+        *)
+            echo "[tls] Unsupported TLS_KEY_ALGORITHM='${tls_key_algorithm}'. Use 'ecdsa' or 'rsa'." >&2
+            exit 1
+            ;;
+    esac
     # Key readable by www-data so Apache can load it after privilege drop.
     chown www-data:www-data "$tls_key_file" "$tls_cert_file"
     chmod 640 "$tls_key_file"

@@ -7,6 +7,7 @@ ENV APACHE_DOCUMENT_ROOT=/var/www/html/public \
     GENERATE_SELF_SIGNED_TLS=1 \
     TLS_CERT_CN=localhost \
     TLS_CERT_SAN=DNS:localhost,IP:127.0.0.1,IP:::1 \
+    TLS_KEY_ALGORITHM=ecdsa \
     TLS_SELF_SIGNED_DAYS=30 \
     ENFORCE_HTTPS=1
 
